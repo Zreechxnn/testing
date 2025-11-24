@@ -19,7 +19,7 @@ public class KartuController : ControllerBase
     }
 
     [HttpGet]
-    // [Authorize(Roles = "admin,operator")]
+    [Authorize(Roles = "admin,operator")]
     public async Task<ActionResult<ApiResponse<List<KartuDto>>>> GetAll()
     {
         var response = await _kartuService.GetAllKartu();
@@ -27,7 +27,7 @@ public class KartuController : ControllerBase
     }
 
     [HttpGet("paged")]
-    // [Authorize(Roles = "admin,operator")]
+    [Authorize(Roles = "admin,operator")]
     public async Task<ActionResult<ApiResponse<PagedResponse<KartuDto>>>> GetPaged([FromQuery] PagedRequest request)
     {
         var response = await _kartuService.GetKartuPaged(request);
@@ -35,7 +35,7 @@ public class KartuController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    // [Authorize(Roles = "admin,operator")]
+    [Authorize(Roles = "admin,operator")]
     public async Task<ActionResult<ApiResponse<KartuDto>>> GetById(int id)
     {
         var response = await _kartuService.GetKartuById(id);
@@ -45,7 +45,7 @@ public class KartuController : ControllerBase
     }
 
     [HttpPost]
-    // [Authorize(Roles = "admin,operator")]
+    [Authorize(Roles = "admin,operator")]
     public async Task<ActionResult<ApiResponse<KartuDto>>> Create([FromBody] KartuCreateDto request)
     {
         var response = await _kartuService.CreateKartu(request);
@@ -55,7 +55,7 @@ public class KartuController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    // [Authorize(Roles = "admin,operator")]
+    [Authorize(Roles = "admin,operator")]
     public async Task<ActionResult<ApiResponse<KartuDto>>> Update(int id, [FromBody] KartuUpdateDto request)
     {
         var response = await _kartuService.UpdateKartu(id, request);
@@ -65,7 +65,7 @@ public class KartuController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    // [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin")]
     public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
     {
         var response = await _kartuService.DeleteKartu(id);

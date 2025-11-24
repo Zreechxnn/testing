@@ -9,8 +9,8 @@ public class KartuCreateDtoValidator : AbstractValidator<KartuCreateDto>
     {
         RuleFor(x => x.Uid)
             .NotEmpty().WithMessage("UID wajib diisi")
-            .Length(5, 50).WithMessage("UID harus 5-50 karakter")
-            .Matches("^[a-zA-Z0-9]*$").WithMessage("UID hanya boleh alfanumerik");
+            .Length(5, 50).WithMessage("UID harus 5-50 karakter");
+        // .Matches("^[a-zA-Z0-9]*$").WithMessage("UID hanya boleh alfanumerik");
 
         RuleFor(x => x.Status)
             .Must(BeAValidStatus).WithMessage("Status harus salah satu dari: AKTIF, NONAKTIF")

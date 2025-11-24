@@ -1,8 +1,3 @@
-D:\sakat\testing\bin\Debug\net9.0\api\appsettings.Development.json
-D:\sakat\testing\bin\Debug\net9.0\api\appsettings.json
-D:\sakat\testing\bin\Debug\net9.0\api\testing.deps.json
-D:\sakat\testing\bin\Debug\net9.0\api\testing.runtimeconfig.json
-D:\sakat\testing\bin\Debug\net9.0\api\testing.staticwebassets.endpoints.json
 D:\sakat\testing\bin\Debug\net9.0\appsettings.Development.json
 D:\sakat\testing\bin\Debug\net9.0\appsettings.json
 D:\sakat\testing\bin\Debug\net9.0\testing.staticwebassets.endpoints.json
@@ -131,6 +126,7 @@ D:\sakat\testing\obj\Debug\net9.0\testing.AssemblyInfo.cs
 D:\sakat\testing\obj\Debug\net9.0\testing.csproj.CoreCompileInputs.cache
 D:\sakat\testing\obj\Debug\net9.0\testing.MvcApplicationPartsAssemblyInfo.cs
 D:\sakat\testing\obj\Debug\net9.0\testing.MvcApplicationPartsAssemblyInfo.cache
+D:\sakat\testing\obj\Debug\net9.0\testing.sourcelink.json
 D:\sakat\testing\obj\Debug\net9.0\rjimswa.dswa.cache.json
 D:\sakat\testing\obj\Debug\net9.0\rjsmrazor.dswa.cache.json
 D:\sakat\testing\obj\Debug\net9.0\rjsmcshtml.dswa.cache.json

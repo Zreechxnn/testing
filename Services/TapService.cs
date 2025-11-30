@@ -13,11 +13,10 @@ public class TapService : ITapService
     private readonly IRuanganRepository _ruanganRepository;
     private readonly IAksesLogRepository _aksesLogRepository;
     private readonly IKelasRepository _kelasRepository;
+    private readonly IUserRepository _userRepository;
     private readonly IHubContext<LogHub> _hubContext;
     private readonly IMapper _mapper;
     private readonly ILogger<TapService> _logger;
-
-    // Timezone untuk WIB (UTC+7)
     private static readonly TimeZoneInfo WibTimeZone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
 
     public TapService(
@@ -25,6 +24,7 @@ public class TapService : ITapService
         IRuanganRepository ruanganRepository,
         IAksesLogRepository aksesLogRepository,
         IKelasRepository kelasRepository,
+        IUserRepository userRepository,
         IHubContext<LogHub> hubContext,
         IMapper mapper,
         ILogger<TapService> logger)
@@ -33,6 +33,7 @@ public class TapService : ITapService
         _ruanganRepository = ruanganRepository;
         _aksesLogRepository = aksesLogRepository;
         _kelasRepository = kelasRepository;
+        _userRepository = userRepository;
         _hubContext = hubContext;
         _mapper = mapper;
         _logger = logger;
@@ -46,14 +47,12 @@ public class TapService : ITapService
             _logger.LogInformation("Received tap: UID={Uid}, Ruangan={Ruangan}, Time={Time}",
                 request.Uid, request.IdRuangan, request.Timestamp);
 
-            // Validasi input dasar
             if (string.IsNullOrWhiteSpace(request.Uid))
             {
                 _logger.LogWarning("UID is empty or null");
                 return ApiResponse<TapResponse>.ErrorResult("UID tidak boleh kosong");
             }
 
-            // Normalisasi UID: trim spasi, pertahankan format asli
             var normalizedUid = request.Uid.Trim();
 
             if (request.IdRuangan <= 0)
@@ -62,33 +61,38 @@ public class TapService : ITapService
                 return ApiResponse<TapResponse>.ErrorResult("Ruangan ID tidak valid");
             }
 
-            // Cari kartu dengan UID yang sudah dinormalisasi
             _logger.LogInformation("Searching for card with UID: {Uid}", normalizedUid);
             var kartu = await _kartuRepository.GetByUidAsync(normalizedUid);
             if (kartu == null)
             {
-                _logger.LogWarning("Kartu tidak terdaftar: {Uid}", request.Uid);
+                _logger.LogWarning("Kartu tidak terdaftar: {Uid}", normalizedUid);
                 return ApiResponse<TapResponse>.SuccessResult(new TapResponse
                 {
                     Status = "KARTU TIDAK TERDAFTAR",
-                    Message = "Kartu tidak terdaftar dalam sistem"
+                    Message = "Kartu tidak terdaftar dalam sistem",
+                    Ruangan = "Unknown",
+                    Waktu = GetCurrentWibTime()
                 });
             }
 
-            _logger.LogInformation("Card found: ID={KartuId}, UID={Uid}, Status={Status}",
-                kartu.Id, kartu.Uid, kartu.Status);
+            _logger.LogInformation("Card details - ID: {KartuId}, UID: {Uid}, Status: {Status}, UserId: {UserId}, KelasId: {KelasId}",
+                kartu.Id, kartu.Uid, kartu.Status, kartu.UserId, kartu.KelasId);
+            _logger.LogInformation("Card relations - User: {User}, Kelas: {Kelas}",
+                kartu.User?.Username ?? "null",
+                kartu.Kelas?.Nama ?? "null");
 
             if (kartu.Status != "AKTIF")
             {
-                _logger.LogWarning("Kartu tidak aktif: {Uid} - Status: {Status}", request.Uid, kartu.Status);
+                _logger.LogWarning("Kartu tidak aktif: {Uid} - Status: {Status}", normalizedUid, kartu.Status);
                 return ApiResponse<TapResponse>.SuccessResult(new TapResponse
                 {
                     Status = "KARTU TIDAK AKTIF",
-                    Message = $"Kartu tidak aktif. Status: {kartu.Status}"
+                    Message = $"Kartu tidak aktif. Status: {kartu.Status}",
+                    Ruangan = "Unknown",
+                    Waktu = GetCurrentWibTime()
                 });
             }
 
-            // Cari ruangan
             _logger.LogInformation("Searching for room with ID: {RuanganId}", request.IdRuangan);
             var ruangan = await _ruanganRepository.GetByIdAsync(request.IdRuangan);
             if (ruangan == null)
@@ -97,10 +101,11 @@ public class TapService : ITapService
                 return ApiResponse<TapResponse>.ErrorResult("Ruangan tidak valid");
             }
 
-            _logger.LogInformation("Room found: ID={RuanganId}, Name={RuanganNama}",
-                ruangan.Id, ruangan.Nama);
+            _logger.LogInformation("Room found: ID={RuanganId}, Name={RuanganNama}", ruangan.Id, ruangan.Nama);
 
-            // --- PERBAIKAN PENTING: KONVERSI WIB KE UTC ---
+            string identitas = GetIdentitasFromKartu(kartu);
+            _logger.LogInformation("Identitas resolved: {Identitas}", identitas);
+
             DateTime tapTime;
             DateTime tapTimeUtc;
 
@@ -108,22 +113,18 @@ public class TapService : ITapService
             {
                 _logger.LogInformation("Time parsed successfully: {ParsedTime} (Kind: {Kind})", tapTime, tapTime.Kind);
 
-                // Konversi ke UTC untuk disimpan di database
                 if (tapTime.Kind == DateTimeKind.Unspecified)
                 {
-                    // Anggap sebagai WIB dan konversi ke UTC
                     tapTimeUtc = TimeZoneInfo.ConvertTimeToUtc(tapTime, WibTimeZone);
                     _logger.LogInformation("Converted Unspecified to UTC: {UtcTime}", tapTimeUtc);
                 }
                 else if (tapTime.Kind == DateTimeKind.Local)
                 {
-                    // Jika sudah Local, konversi ke UTC
                     tapTimeUtc = tapTime.ToUniversalTime();
                     _logger.LogInformation("Converted Local to UTC: {UtcTime}", tapTimeUtc);
                 }
                 else
                 {
-                    // Jika sudah UTC, langsung pakai
                     tapTimeUtc = tapTime;
                     _logger.LogInformation("Already UTC: {UtcTime}", tapTimeUtc);
                 }
@@ -135,170 +136,13 @@ public class TapService : ITapService
                 tapTime = TimeZoneInfo.ConvertTimeFromUtc(tapTimeUtc, WibTimeZone);
             }
 
-            // Pastikan UTC time disimpan dengan kind yang benar
             tapTimeUtc = DateTime.SpecifyKind(tapTimeUtc, DateTimeKind.Utc);
-
             _logger.LogInformation("Final times - Local/WIB: {LocalTime}, UTC: {UtcTime}", tapTime, tapTimeUtc);
-            // -----------------------------
 
-            // Cek akses log aktif
-            _logger.LogInformation("Checking for active access log for card: {KartuId}", kartu.Id);
-            var lastAccess = await _aksesLogRepository.GetActiveLogByKartuIdAsync(kartu.Id);
-
-            TapResponse response;
-
-            if (lastAccess == null)
-            {
-                _logger.LogInformation("No active log found - PROCESSING CHECK-IN");
-
-                // CHECK-IN - Simpan UTC time
-                var aksesLog = new AksesLog
-                {
-                    KartuId = kartu.Id,
-                    RuanganId = request.IdRuangan,
-                    TimestampMasuk = tapTimeUtc, // Simpan sebagai UTC
-                    Status = "CHECKIN"
-                };
-
-                _logger.LogInformation("Creating new access log: KartuId={KartuId}, RuanganId={RuanganId}, Time(UTC)={Time}",
-                    aksesLog.KartuId, aksesLog.RuanganId, aksesLog.TimestampMasuk);
-
-                await _aksesLogRepository.AddAsync(aksesLog);
-                _logger.LogInformation("Access log added to repository, saving...");
-
-                var saved = await _aksesLogRepository.SaveAsync();
-
-                if (!saved)
-                {
-                    _logger.LogError("Failed to save check-in data for card {KartuId}", kartu.Id);
-                    return ApiResponse<TapResponse>.ErrorResult("Gagal melakukan check-in");
-                }
-
-                _logger.LogInformation("Check-in saved successfully. Log ID: {LogId}", aksesLog.Id);
-
-                // Response menggunakan waktu WIB
-                response = new TapResponse
-                {
-                    Status = "SUKSES CHECK-IN",
-                    Message = "Check-in berhasil",
-                    Ruangan = ruangan.Nama,
-                    Waktu = tapTime.ToString("yyyy-MM-dd HH:mm:ss") // Tampilkan WIB
-                };
-
-                _logger.LogInformation("Check-in berhasil: Kartu {Uid} di {Ruangan}", kartu.Uid, ruangan.Nama);
-
-                // Kirim notifikasi SignalR dengan waktu WIB
-                try
-                {
-                    var logData = new
-                    {
-                        Id = aksesLog.Id,
-                        KartuUid = kartu.Uid,
-                        Ruangan = ruangan.Nama,
-                        Masuk = tapTime.ToString("yyyy-MM-dd HH:mm:ss"), // Tampilkan WIB
-                        Keluar = (string?)null,
-                        Status = aksesLog.Status,
-                        Durasi = "Masih aktif"
-                    };
-                    await _hubContext.Clients.All.SendAsync("ReceiveNewLog", logData);
-                    _logger.LogInformation("SignalR notification sent");
-                }
-                catch (Exception hubEx)
-                {
-                    _logger.LogWarning(hubEx, "Failed to send SignalR notification, but check-in was successful");
-                }
-            }
-            else
-            {
-                _logger.LogInformation("Active log found - PROCESSING CHECK-OUT. Log ID: {LogId}", lastAccess.Id);
-
-                // CHECK-OUT
-                if (lastAccess.RuanganId != request.IdRuangan)
-                {
-                    var ruanganCheckIn = await _ruanganRepository.GetByIdAsync(lastAccess.RuanganId);
-                    var ruanganNama = ruanganCheckIn?.Nama ?? "Unknown";
-
-                    _logger.LogWarning("Check-out rejected: Different room. Check-in at {RuanganCheckIn}, check-out attempt at {RuanganSekarang}",
-                        ruanganNama, ruangan.Nama);
-
-                    response = new TapResponse
-                    {
-                        Status = "ERROR: BEDA LAB",
-                        Message = $"Check-out harus dilakukan di ruangan yang sama dengan check-in (Ruangan: {ruanganNama})",
-                        Ruangan = ruangan.Nama
-                    };
-                }
-                else
-                {
-                    _logger.LogInformation("Processing check-out for log: {LogId}", lastAccess.Id);
-
-                    // Simpan waktu checkout sebagai UTC
-                    lastAccess.TimestampKeluar = tapTimeUtc;
-                    lastAccess.Status = "CHECKOUT";
-
-                    _logger.LogInformation("Updating access log with check-out time (UTC): {CheckOutTime}", tapTimeUtc);
-
-                    _aksesLogRepository.Update(lastAccess);
-                    var saved = await _aksesLogRepository.SaveAsync();
-
-                    if (!saved)
-                    {
-                        _logger.LogError("Failed to save check-out data: LogId={LogId}, Kartu={Uid}",
-                            lastAccess.Id, kartu.Uid);
-                        return ApiResponse<TapResponse>.ErrorResult("Gagal melakukan check-out: Data tidak dapat disimpan");
-                    }
-
-                    _logger.LogInformation("Check-out saved successfully");
-
-                    // Response menggunakan waktu WIB
-                    response = new TapResponse
-                    {
-                        Status = "SUKSES CHECK-OUT",
-                        Message = "Check-out berhasil",
-                        Ruangan = ruangan.Nama,
-                        Waktu = tapTime.ToString("yyyy-MM-dd HH:mm:ss") // Tampilkan WIB
-                    };
-
-                    _logger.LogInformation("Check-out berhasil: Kartu {Uid} di {Ruangan}", kartu.Uid, ruangan.Nama);
-
-                    // Hitung durasi
-                    var durasi = lastAccess.TimestampKeluar.HasValue ?
-                                (lastAccess.TimestampKeluar.Value - lastAccess.TimestampMasuk).TotalMinutes.ToString("F1") + " menit" :
-                                "0 menit";
-
-                    _logger.LogInformation("Duration calculated: {Durasi}", durasi);
-
-                    // Kirim notifikasi SignalR dengan waktu WIB
-                    try
-                    {
-                        // Konversi waktu dari UTC ke WIB untuk display
-                        var masukWib = TimeZoneInfo.ConvertTimeFromUtc(lastAccess.TimestampMasuk, WibTimeZone);
-                        var keluarWib = lastAccess.TimestampKeluar.HasValue ?
-                                       TimeZoneInfo.ConvertTimeFromUtc(lastAccess.TimestampKeluar.Value, WibTimeZone) :
-                                       (DateTime?)null;
-
-                        var logData = new
-                        {
-                            Id = lastAccess.Id,
-                            KartuUid = kartu.Uid,
-                            Ruangan = ruangan.Nama,
-                            Masuk = masukWib.ToString("yyyy-MM-dd HH:mm:ss"),
-                            Keluar = keluarWib?.ToString("yyyy-MM-dd HH:mm:ss"),
-                            Status = lastAccess.Status,
-                            Durasi = durasi
-                        };
-                        await _hubContext.Clients.All.SendAsync("ReceiveUpdatedLog", logData);
-                        _logger.LogInformation("SignalR notification sent for check-out");
-                    }
-                    catch (Exception hubEx)
-                    {
-                        _logger.LogWarning(hubEx, "Failed to send SignalR notification, but check-out was successful");
-                    }
-                }
-            }
+            var result = await ProcessTapLogic(kartu, ruangan, tapTime, tapTimeUtc, identitas);
 
             _logger.LogInformation("=== END PROCESS TAP - SUCCESS ===");
-            return ApiResponse<TapResponse>.SuccessResult(response);
+            return result;
         }
         catch (Exception ex)
         {
@@ -307,6 +151,214 @@ public class TapService : ITapService
         }
     }
 
+    private async Task<ApiResponse<TapResponse>> ProcessTapLogic(Kartu kartu, Ruangan ruangan, DateTime tapTime, DateTime tapTimeUtc, string identitas)
+    {
+        _logger.LogInformation("Checking for active access log for card: {KartuId}", kartu.Id);
+        var lastAccess = await _aksesLogRepository.GetActiveLogByKartuIdAsync(kartu.Id);
+
+        // TapResponse response;
+
+        if (lastAccess == null)
+        {
+            return await ProcessCheckIn(kartu, ruangan, tapTime, tapTimeUtc, identitas);
+        }
+        else
+        {
+            return await ProcessCheckOut(kartu, ruangan, lastAccess, tapTime, tapTimeUtc, identitas);
+        }
+    }
+
+    // METHOD BARU: PROSES CHECK-IN
+    private async Task<ApiResponse<TapResponse>> ProcessCheckIn(Kartu kartu, Ruangan ruangan, DateTime tapTime, DateTime tapTimeUtc, string identitas)
+    {
+        _logger.LogInformation("No active log found - PROCESSING CHECK-IN");
+
+        // CHECK-IN - Simpan UTC time
+        var aksesLog = new AksesLog
+        {
+            KartuId = kartu.Id,
+            RuanganId = ruangan.Id,
+            TimestampMasuk = tapTimeUtc,
+            Status = "CHECKIN"
+        };
+
+        _logger.LogInformation("Creating new access log: KartuId={KartuId}, RuanganId={RuanganId}, Time(UTC)={Time}",
+            aksesLog.KartuId, aksesLog.RuanganId, aksesLog.TimestampMasuk);
+
+        await _aksesLogRepository.AddAsync(aksesLog);
+        _logger.LogInformation("Access log added to repository, saving...");
+
+        var saved = await _aksesLogRepository.SaveAsync();
+
+        if (!saved)
+        {
+            _logger.LogError("Failed to save check-in data for card {KartuId}", kartu.Id);
+            return ApiResponse<TapResponse>.ErrorResult("Gagal melakukan check-in");
+        }
+
+        _logger.LogInformation("Check-in saved successfully. Log ID: {LogId}", aksesLog.Id);
+
+        // RESPONSE CHECK-IN
+        var response = new TapResponse
+        {
+            Status = "SUKSES CHECK-IN",
+            Message = "Check-in berhasil",
+            Ruangan = ruangan.Nama,
+            Waktu = tapTime.ToString("yyyy-MM-dd HH:mm:ss"),
+            NamaKelas = identitas
+        };
+
+        _logger.LogInformation("Check-in berhasil: Kartu {Uid} di {Ruangan}, Identitas: {Identitas}",
+            kartu.Uid, ruangan.Nama, identitas);
+
+        // KIRIM NOTIFIKASI SIGNALR
+        await SendSignalRNotification(aksesLog, kartu, ruangan, tapTime, null, "CHECKIN", identitas);
+
+        return ApiResponse<TapResponse>.SuccessResult(response);
+    }
+
+    // METHOD BARU: PROSES CHECK-OUT
+    private async Task<ApiResponse<TapResponse>> ProcessCheckOut(Kartu kartu, Ruangan ruangan, AksesLog lastAccess, DateTime tapTime, DateTime tapTimeUtc, string identitas)
+    {
+        _logger.LogInformation("Active log found - PROCESSING CHECK-OUT. Log ID: {LogId}", lastAccess.Id);
+
+        // CHECK-OUT
+        if (lastAccess.RuanganId != ruangan.Id)
+        {
+            var ruanganCheckIn = await _ruanganRepository.GetByIdAsync(lastAccess.RuanganId);
+            var ruanganNama = ruanganCheckIn?.Nama ?? "Unknown";
+
+            _logger.LogWarning("Check-out rejected: Different room. Check-in at {RuanganCheckIn}, check-out attempt at {RuanganSekarang}",
+                ruanganNama, ruangan.Nama);
+
+            var response = new TapResponse
+            {
+                Status = "ERROR: BEDA LAB",
+                Message = $"Check-out harus dilakukan di ruangan yang sama dengan check-in (Ruangan: {ruanganNama})",
+                Ruangan = ruangan.Nama,
+                Waktu = tapTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                NamaKelas = identitas
+            };
+
+            return ApiResponse<TapResponse>.SuccessResult(response);
+        }
+        else
+        {
+            _logger.LogInformation("Processing check-out for log: {LogId}", lastAccess.Id);
+
+            // Simpan waktu checkout sebagai UTC
+            lastAccess.TimestampKeluar = tapTimeUtc;
+            lastAccess.Status = "CHECKOUT";
+
+            _logger.LogInformation("Updating access log with check-out time (UTC): {CheckOutTime}", tapTimeUtc);
+
+            _aksesLogRepository.Update(lastAccess);
+            var saved = await _aksesLogRepository.SaveAsync();
+
+            if (!saved)
+            {
+                _logger.LogError("Failed to save check-out data: LogId={LogId}, Kartu={Uid}",
+                    lastAccess.Id, kartu.Uid);
+                return ApiResponse<TapResponse>.ErrorResult("Gagal melakukan check-out: Data tidak dapat disimpan");
+            }
+
+            _logger.LogInformation("Check-out saved successfully");
+
+            // Hitung durasi
+            var durasi = lastAccess.TimestampKeluar.HasValue ?
+                        (lastAccess.TimestampKeluar.Value - lastAccess.TimestampMasuk).TotalMinutes.ToString("F1") + " menit" :
+                        "0 menit";
+
+            _logger.LogInformation("Duration calculated: {Durasi}", durasi);
+
+            // RESPONSE CHECK-OUT
+            var response = new TapResponse
+            {
+                Status = "SUKSES CHECK-OUT",
+                Message = "Check-out berhasil",
+                Ruangan = ruangan.Nama,
+                Waktu = tapTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                NamaKelas = identitas
+            };
+
+            _logger.LogInformation("Check-out berhasil: Kartu {Uid} di {Ruangan}, Identitas: {Identitas}",
+                kartu.Uid, ruangan.Nama, identitas);
+
+            // KIRIM NOTIFIKASI SIGNALR
+            await SendSignalRNotification(lastAccess, kartu, ruangan, tapTime, durasi, "CHECKOUT", identitas);
+
+            return ApiResponse<TapResponse>.SuccessResult(response);
+        }
+    }
+
+    // METHOD BARU: AMBIL IDENTITAS DARI KARTU
+    private string GetIdentitasFromKartu(Kartu kartu)
+    {
+        // Prioritaskan nama kelas jika ada
+        if (kartu.KelasId.HasValue && kartu.Kelas != null)
+        {
+            return kartu.Kelas.Nama;
+        }
+
+        // Jika tidak ada kelas, gunakan username user
+        if (kartu.UserId.HasValue && kartu.User != null)
+        {
+            return kartu.User.Username;
+        }
+
+        // Jika tidak ada keduanya, beri label default
+        return "Tidak Teridentifikasi";
+    }
+
+    // METHOD BARU: KIRIM NOTIFIKASI SIGNALR
+    private async Task SendSignalRNotification(AksesLog aksesLog, Kartu kartu, Ruangan ruangan, DateTime tapTime, string? durasi, string eventType, string identitas)
+    {
+        try
+        {
+            // Konversi waktu dari UTC ke WIB untuk display
+            var masukWib = TimeZoneInfo.ConvertTimeFromUtc(aksesLog.TimestampMasuk, WibTimeZone);
+            var keluarWib = aksesLog.TimestampKeluar.HasValue ?
+                           TimeZoneInfo.ConvertTimeFromUtc(aksesLog.TimestampKeluar.Value, WibTimeZone) :
+                           (DateTime?)null;
+
+            var logData = new
+            {
+                Id = aksesLog.Id,
+                KartuUid = kartu.Uid,
+                Ruangan = ruangan.Nama,
+                Masuk = masukWib.ToString("yyyy-MM-dd HH:mm:ss"),
+                Keluar = keluarWib?.ToString("yyyy-MM-dd HH:mm:ss"),
+                Status = aksesLog.Status,
+                Durasi = durasi ?? "Masih aktif",
+                Identitas = identitas,
+                EventType = eventType,
+                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+            };
+
+            if (eventType == "CHECKIN")
+            {
+                await _hubContext.Clients.All.SendAsync("ReceiveNewLog", logData);
+                _logger.LogInformation("SignalR CHECK-IN notification sent for identitas: {Identitas}", identitas);
+            }
+            else
+            {
+                await _hubContext.Clients.All.SendAsync("ReceiveUpdatedLog", logData);
+                _logger.LogInformation("SignalR CHECK-OUT notification sent for identitas: {Identitas}", identitas);
+            }
+        }
+        catch (Exception hubEx)
+        {
+            _logger.LogWarning(hubEx, "Failed to send SignalR notification, but tap was successful");
+        }
+    }
+
+    // METHOD BARU: GET CURRENT WIB TIME
+    private string GetCurrentWibTime()
+    {
+        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, WibTimeZone).ToString("yyyy-MM-dd HH:mm:ss");
+    }
+
+    // METHOD-METHOD LAINNYA TETAP SAMA...
     public async Task<ApiResponse<List<object>>> GetLogs(int? ruanganId = null)
     {
         try
@@ -331,6 +383,13 @@ public class TapService : ITapService
                                TimeZoneInfo.ConvertTimeFromUtc(a.TimestampKeluar.Value, WibTimeZone) :
                                (DateTime?)null;
 
+                // Ambil identitas dari kartu
+                string identitas = "Tidak Teridentifikasi";
+                if (a.Kartu != null)
+                {
+                    identitas = GetIdentitasFromKartu(a.Kartu);
+                }
+
                 return new
                 {
                     Id = a.Id,
@@ -341,7 +400,8 @@ public class TapService : ITapService
                     Status = a.Status,
                     Durasi = a.TimestampKeluar.HasValue ?
                              (a.TimestampKeluar.Value - a.TimestampMasuk).TotalMinutes.ToString("F1") + " menit" :
-                             "Masih aktif"
+                             "Masih aktif",
+                    Identitas = identitas
                 };
             }).Cast<object>().ToList();
 
@@ -355,7 +415,6 @@ public class TapService : ITapService
         }
     }
 
-    // Method lainnya tetap sama...
     public async Task<ApiResponse<List<object>>> GetKartu()
     {
         try
@@ -366,7 +425,12 @@ public class TapService : ITapService
                 Id = k.Id,
                 UID = k.Uid,
                 Status = k.Status,
-                Keterangan = k.Keterangan
+                Keterangan = k.Keterangan,
+                UserId = k.UserId,
+                KelasId = k.KelasId,
+                UserUsername = k.User?.Username,
+                KelasNama = k.Kelas?.Nama,
+                Identitas = GetIdentitasFromKartu(k)
             }).Cast<object>().ToList();
 
             return ApiResponse<List<object>>.SuccessResult(result);

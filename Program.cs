@@ -148,25 +148,23 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             var accessToken = context.Request.Headers["Authorization"].ToString();
             var path = context.HttpContext.Request.Path;
-            if (string.IsNullOrEmpty(accessToken) || !accessToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            {
-                if (context.Request.Query.ContainsKey("access_token"))
-                {
-                    // Ambil token dari URL
-                    var tokenFromQuery = context.Request.Query["access_token"];
 
-                    // Pastikan ini request ke Hub SignalR
-                    if (!string.IsNullOrEmpty(tokenFromQuery) &&
-                        path.StartsWithSegments("/logHub", StringComparison.OrdinalIgnoreCase))
-                    {
-                        context.Token = tokenFromQuery;
-                        return Task.CompletedTask;
-                    }
-                }
-            }
             if (!string.IsNullOrEmpty(accessToken) && accessToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
-                context.Token = accessToken.Substring("Bearer ".Length).Trim();
+                var rawToken = accessToken.Substring("Bearer ".Length).Trim();
+                context.Token = rawToken.Replace("\"", "");
+            }
+
+            else if (string.IsNullOrEmpty(context.Token))
+            {
+                var tokenFromQuery = context.Request.Query["access_token"].ToString();
+
+                if (!string.IsNullOrEmpty(tokenFromQuery) &&
+                    path.StartsWithSegments("/logHub", StringComparison.OrdinalIgnoreCase))
+                {
+
+                    context.Token = tokenFromQuery.Replace("\"", "");
+                }
             }
 
             return Task.CompletedTask;

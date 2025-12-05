@@ -146,23 +146,29 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     {
         OnMessageReceived = context =>
         {
-            var authHeader = context.Request.Headers["Authorization"].ToString();
-            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            var accessToken = context.Request.Headers["Authorization"].ToString();
+            var path = context.HttpContext.Request.Path;
+            if (string.IsNullOrEmpty(accessToken) || !accessToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
-                var token = authHeader.Substring("Bearer ".Length).Trim();
-                try
+                if (context.Request.Query.ContainsKey("access_token"))
                 {
-                    var handler = new JwtSecurityTokenHandler();
-                    var principal = handler.ValidateToken(token, validationParams, out var validatedToken);
-                    context.Principal = principal;
-                    context.Success();
-                    Console.WriteLine($"[🎉 MANUAL OVERRIDE] Token Valid! User: {principal.Identity?.Name}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[❌ MANUAL FAIL] Token ditolak: {ex.Message}");
+                    // Ambil token dari URL
+                    var tokenFromQuery = context.Request.Query["access_token"];
+
+                    // Pastikan ini request ke Hub SignalR
+                    if (!string.IsNullOrEmpty(tokenFromQuery) &&
+                        path.StartsWithSegments("/logHub", StringComparison.OrdinalIgnoreCase))
+                    {
+                        context.Token = tokenFromQuery;
+                        return Task.CompletedTask;
+                    }
                 }
             }
+            if (!string.IsNullOrEmpty(accessToken) && accessToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Token = accessToken.Substring("Bearer ".Length).Trim();
+            }
+
             return Task.CompletedTask;
         },
         OnAuthenticationFailed = context =>

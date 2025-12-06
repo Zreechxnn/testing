@@ -147,33 +147,26 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
     options.Events = new JwtBearerEvents
     {
-        // GANTI BAGIAN INI DI DALAM AddJwtBearer -> Events
-
         OnMessageReceived = context =>
         {
-            string token = null;
-
+            // A. Cek Query String (Khusus SignalR)
             var accessToken = context.Request.Query["access_token"];
             var path = context.HttpContext.Request.Path;
 
             if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/logHub"))
             {
-                Console.WriteLine($"[SIGNALR AUTH] Token mentah dari URL: {accessToken}");
-                token = accessToken;
+                // Baca token dari URL agar SignalR bisa connect
+                context.Token = accessToken;
+                Console.WriteLine($"[SIGNALR AUTH] Token didapat dari URL untuk hub.");
+                return Task.CompletedTask;
             }
 
+            // B. Cek Header (Untuk API Biasa)
             var authHeader = context.Request.Headers["Authorization"].ToString();
-            if (string.IsNullOrEmpty(token) && !string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
-                token = authHeader.Substring("Bearer ".Length).Trim();
+                context.Token = authHeader.Substring("Bearer ".Length).Trim().Trim('"');
             }
-
-            if (!string.IsNullOrEmpty(token))
-            {
-                token = token.Replace("\"", "").Trim();
-                context.Token = token;
-            }
-
             return Task.CompletedTask;
         },
         OnAuthenticationFailed = context =>

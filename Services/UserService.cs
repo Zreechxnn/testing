@@ -1,5 +1,7 @@
 using AutoMapper;
+using Microsoft.AspNetCore.SignalR;
 using testing.DTOs;
+using testing.Hubs;
 using testing.Models;
 using testing.Repositories;
 using Microsoft.IdentityModel.Tokens;
@@ -16,6 +18,7 @@ public class UserService : IUserService
     private readonly IMapper _mapper;
     private readonly ILogger<UserService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly IHubContext<LogHub> _hubContext; // TAMBAHKAN INI
 
     // JWT Settings
     private readonly string _jwtSecretKey;
@@ -28,13 +31,15 @@ public class UserService : IUserService
        IKartuRepository kartuRepository,
        IMapper mapper,
        ILogger<UserService> logger,
-       IConfiguration configuration)
+       IConfiguration configuration,
+       IHubContext<LogHub> hubContext) // TAMBAHKAN PARAMETER
     {
         _userRepository = userRepository;
         _kartuRepository = kartuRepository;
         _mapper = mapper;
         _logger = logger;
         _configuration = configuration;
+        _hubContext = hubContext; // ASSIGN
 
         // Load JWT settings dari environment variables
         _jwtSecretKey = Environment.GetEnvironmentVariable("JwtSettings__SecretKey")
@@ -149,6 +154,10 @@ public class UserService : IUserService
             var userDto = _mapper.Map<UserDto>(createdUser!);
 
             _logger.LogInformation("User created: {Username}", user.Username);
+
+            // TAMBAHKAN NOTIFIKASI SIGNALR
+            await SendUserNotification("USER_CREATED", userDto);
+
             return ApiResponse<UserDto>.SuccessResult(userDto, "User berhasil dibuat");
         }
         catch (Exception ex)
@@ -189,6 +198,9 @@ public class UserService : IUserService
             var updatedUser = await _userRepository.GetByIdAsync(id);
             var userDto = _mapper.Map<UserDto>(updatedUser!);
 
+            // TAMBAHKAN NOTIFIKASI SIGNALR
+            await SendUserNotification("USER_UPDATED", userDto);
+
             return ApiResponse<UserDto>.SuccessResult(userDto, "User berhasil diupdate");
         }
         catch (Exception ex)
@@ -215,12 +227,24 @@ public class UserService : IUserService
                     return ApiResponse<object>.ErrorResult("Tidak dapat menghapus admin terakhir");
             }
 
+            // Simpan data untuk notifikasi
+            var userDto = new UserDto
+            {
+                Id = user.Id,
+                Username = user.Username,
+                Role = user.Role
+            };
+
             _userRepository.Remove(user);
             var saved = await _userRepository.SaveAsync();
 
             if (!saved) return ApiResponse<object>.ErrorResult("Gagal menghapus user");
 
             _logger.LogInformation("User deleted: {Id} - {Username}", user.Id, user.Username);
+
+            // TAMBAHKAN NOTIFIKASI SIGNALR
+            await SendUserNotification("USER_DELETED", userDto);
+
             return ApiResponse<object>.SuccessResult(null!, "User berhasil dihapus");
         }
         catch (Exception ex)
@@ -300,5 +324,44 @@ public class UserService : IUserService
             _logger.LogError(ex, "Error generating JWT token for user {Username}", user.Username);
             throw new Exception($"Gagal generate token: {ex.Message}");
         }
+    }
+
+    // METHOD BARU: Helper untuk mengirim notifikasi SignalR
+    private async Task SendUserNotification(string eventType, UserDto userDto, string customMessage = null)
+    {
+        try
+        {
+            var notification = new
+            {
+                EventId = Guid.NewGuid(),
+                EventType = eventType,
+                Timestamp = DateTime.UtcNow,
+                Data = userDto,
+                Message = customMessage ?? $"User {userDto.Username} telah {GetEventAction(eventType)}"
+            };
+
+            // Kirim ke semua client yang terhubung
+            await _hubContext.Clients.All.SendAsync("UserNotification", notification);
+
+            // Kirim ke grup admin untuk logging sistem
+            await _hubContext.Clients.Group("admin").SendAsync("SystemNotification", notification);
+
+            _logger.LogDebug($"SignalR notification sent for {eventType}: {userDto.Username}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, $"Failed to send SignalR notification for {eventType}");
+        }
+    }
+
+    private string GetEventAction(string eventType)
+    {
+        return eventType switch
+        {
+            "USER_CREATED" => "dibuat",
+            "USER_UPDATED" => "diperbarui",
+            "USER_DELETED" => "dihapus",
+            _ => "diubah"
+        };
     }
 }

@@ -1,5 +1,7 @@
 using AutoMapper;
+using Microsoft.AspNetCore.SignalR;
 using testing.DTOs;
+using testing.Hubs;
 using testing.Models;
 using testing.Repositories;
 
@@ -13,6 +15,8 @@ public class KartuService : IKartuService
     private readonly IAksesLogRepository _aksesLogRepository;
     private readonly IMapper _mapper;
     private readonly ILogger<KartuService> _logger;
+    private readonly IHubContext<LogHub> _hubContext;
+    private readonly IBroadcastService _broadcastService;
 
     public KartuService(
         IKartuRepository kartuRepository,
@@ -20,7 +24,9 @@ public class KartuService : IKartuService
         IKelasRepository kelasRepository,
         IAksesLogRepository aksesLogRepository,
         IMapper mapper,
-        ILogger<KartuService> logger)
+        ILogger<KartuService> logger,
+        IHubContext<LogHub> hubContext,
+        IBroadcastService broadcastService = null)
     {
         _kartuRepository = kartuRepository;
         _userRepository = userRepository;
@@ -28,6 +34,8 @@ public class KartuService : IKartuService
         _aksesLogRepository = aksesLogRepository;
         _mapper = mapper;
         _logger = logger;
+        _hubContext = hubContext;
+        _broadcastService = broadcastService;
     }
 
     public async Task<ApiResponse<List<KartuDto>>> GetAllKartu()
@@ -233,6 +241,21 @@ public class KartuService : IKartuService
             };
 
             _logger.LogInformation("Kartu created: UID={Uid}", kartu.Uid);
+
+            // KIRIM NOTIFIKASI SIGNALR
+            await SendKartuNotification("KARTU_CREATED", kartuDto, $"Kartu baru berhasil didaftarkan: {kartu.Uid}");
+
+            // Broadcast ke semua client
+            if (_broadcastService != null)
+            {
+                await _broadcastService.SendToAllAsync("KartuBaruDitambahkan", new
+                {
+                    Kartu = kartuDto,
+                    Timestamp = DateTime.UtcNow,
+                    Action = "CREATE"
+                });
+            }
+
             return ApiResponse<KartuDto>.SuccessResult(kartuDto, "Kartu berhasil ditambahkan");
         }
         catch (Exception ex)
@@ -318,6 +341,15 @@ public class KartuService : IKartuService
                 return ApiResponse<KartuDto>.ErrorResult("Kartu tidak dapat memiliki User dan Kelas secara bersamaan");
             }
 
+            // Simpan data lama untuk perbandingan
+            var oldData = new
+            {
+                Uid = kartu.Uid,
+                Status = kartu.Status,
+                UserId = kartu.UserId,
+                KelasId = kartu.KelasId
+            };
+
             // **PERBAIKAN PENTING: Update semua field termasuk KelasId**
             kartu.Uid = normalizedUid;
             kartu.Status = request.Status;
@@ -357,6 +389,23 @@ public class KartuService : IKartuService
             _logger.LogInformation("Kartu updated: {Id} - {Uid}, UserId: {UserId}, KelasId: {KelasId}",
                 kartu.Id, kartu.Uid, kartu.UserId, kartu.KelasId);
 
+            // KIRIM NOTIFIKASI SIGNALR
+            await SendKartuNotification("KARTU_UPDATED", kartuDto,
+                $"Kartu {oldData.Uid} telah diperbarui. Perubahan: {GetChangeSummary(oldData, kartu)}");
+
+            // Broadcast perubahan
+            if (_broadcastService != null)
+            {
+                await _broadcastService.SendToAllAsync("KartuDiperbarui", new
+                {
+                    Kartu = kartuDto,
+                    OldData = oldData,
+                    Changes = GetChanges(oldData, kartu),
+                    Timestamp = DateTime.UtcNow,
+                    Action = "UPDATE"
+                });
+            }
+
             return ApiResponse<KartuDto>.SuccessResult(kartuDto, "Kartu berhasil diupdate");
         }
         catch (Exception ex)
@@ -382,6 +431,20 @@ public class KartuService : IKartuService
                 return ApiResponse<object>.ErrorResult("Tidak dapat menghapus kartu karena memiliki riwayat akses");
             }
 
+            // Simpan data sebelum dihapus untuk notifikasi
+            var deletedKartu = new KartuDto
+            {
+                Id = kartu.Id,
+                Uid = kartu.Uid,
+                Status = kartu.Status,
+                Keterangan = kartu.Keterangan,
+                UserId = kartu.UserId,
+                KelasId = kartu.KelasId,
+                CreatedAt = kartu.CreatedAt,
+                UserUsername = kartu.User?.Username,
+                KelasNama = kartu.Kelas?.Nama
+            };
+
             _kartuRepository.Remove(kartu);
             var saved = await _kartuRepository.SaveAsync();
 
@@ -391,6 +454,23 @@ public class KartuService : IKartuService
             }
 
             _logger.LogInformation("Kartu deleted: {Id} - {Uid}", kartu.Id, kartu.Uid);
+
+            // KIRIM NOTIFIKASI SIGNALR
+            await SendKartuNotification("KARTU_DELETED", deletedKartu,
+                $"Kartu {kartu.Uid} berhasil dihapus dari sistem");
+
+            // Broadcast penghapusan
+            if (_broadcastService != null)
+            {
+                await _broadcastService.SendToAllAsync("KartuDihapus", new
+                {
+                    Kartu = deletedKartu,
+                    Timestamp = DateTime.UtcNow,
+                    Action = "DELETE",
+                    Warning = "Kartu telah dihapus permanen dari sistem"
+                });
+            }
+
             return ApiResponse<object>.SuccessResult(null!, "Kartu berhasil dihapus");
         }
         catch (Exception ex)
@@ -414,6 +494,10 @@ public class KartuService : IKartuService
                     Terdaftar = false,
                     Message = "Kartu tidak terdaftar"
                 };
+
+                // Log pencarian kartu yang tidak ditemukan
+                _logger.LogInformation("Kartu check: UID={Uid} - TIDAK TERDAFTAR", uid);
+
                 return ApiResponse<KartuCheckDto>.SuccessResult(notFoundResponse);
             }
 
@@ -430,6 +514,19 @@ public class KartuService : IKartuService
                 KelasNama = kartu.Kelas?.Nama
             };
 
+            _logger.LogInformation("Kartu check: UID={Uid} - TERDAFTAR, Status: {Status}", uid, kartu.Status);
+
+            // Kirim notifikasi real-time untuk monitoring
+            await _hubContext.Clients.Group("monitoring").SendAsync("KartuDiperiksa", new
+            {
+                Uid = kartu.Uid,
+                Status = kartu.Status,
+                Timestamp = DateTime.UtcNow,
+                User = kartu.User?.Username,
+                Kelas = kartu.Kelas?.Nama,
+                Terdaftar = true
+            });
+
             return ApiResponse<KartuCheckDto>.SuccessResult(foundResponse);
         }
         catch (Exception ex)
@@ -437,5 +534,93 @@ public class KartuService : IKartuService
             _logger.LogError(ex, "Error checking card: {Uid}", uid);
             return ApiResponse<KartuCheckDto>.ErrorResult("Gagal memeriksa kartu");
         }
+    }
+
+    // ===== METHOD HELPER UNTUK SIGNALR =====
+
+    private async Task SendKartuNotification(string eventType, KartuDto kartuDto, string customMessage = null)
+    {
+        try
+        {
+            var notification = new
+            {
+                EventId = Guid.NewGuid(),
+                EventType = eventType,
+                Timestamp = DateTime.UtcNow,
+                Data = kartuDto,
+                Message = customMessage ?? $"Kartu {kartuDto.Uid} telah {GetEventAction(eventType)}",
+                ActionBy = "System", // Bisa disesuaikan dengan user context jika ada
+                Priority = eventType == "KARTU_DELETED" ? "HIGH" : "MEDIUM"
+            };
+
+            // Kirim ke semua client yang terhubung
+            await _hubContext.Clients.All.SendAsync("KartuNotification", notification);
+
+            // Kirim ke grup admin untuk logging sistem
+            await _hubContext.Clients.Group("admin").SendAsync("SystemLog", new
+            {
+                Type = "KARTU_OPERATION",
+                Event = eventType,
+                Data = notification,
+                Timestamp = DateTime.UtcNow
+            });
+
+            // Kirim ke grup monitoring jika event penting
+            if (eventType == "KARTU_DELETED" || eventType == "KARTU_CREATED")
+            {
+                await _hubContext.Clients.Group("monitoring").SendAsync("ImportantNotification", notification);
+            }
+
+            _logger.LogDebug("SignalR notification sent for {EventType}: {Uid}", eventType, kartuDto.Uid);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send SignalR notification for {EventType}", eventType);
+        }
+    }
+
+    private string GetEventAction(string eventType)
+    {
+        return eventType switch
+        {
+            "KARTU_CREATED" => "dibuat",
+            "KARTU_UPDATED" => "diperbarui",
+            "KARTU_DELETED" => "dihapus",
+            _ => "diubah"
+        };
+    }
+
+    private string GetChangeSummary(object oldData, Kartu newData)
+    {
+        var changes = new List<string>();
+        var old = oldData as dynamic;
+
+        if (old.Uid != newData.Uid)
+            changes.Add($"UID: {old.Uid} → {newData.Uid}");
+        if (old.Status != newData.Status)
+            changes.Add($"Status: {old.Status} → {newData.Status}");
+        if (old.UserId != newData.UserId)
+            changes.Add($"User: {(old.UserId?.ToString() ?? "Tidak ada")} → {(newData.UserId?.ToString() ?? "Tidak ada")}");
+        if (old.KelasId != newData.KelasId)
+            changes.Add($"Kelas: {(old.KelasId?.ToString() ?? "Tidak ada")} → {(newData.KelasId?.ToString() ?? "Tidak ada")}");
+
+        return changes.Any() ? string.Join(", ", changes) : "Tidak ada perubahan signifikan";
+    }
+
+    private Dictionary<string, object> GetChanges(object oldData, Kartu newData)
+    {
+        var changes = new Dictionary<string, object>();
+        var old = oldData as dynamic;
+
+        if (old.Uid != newData.Uid)
+            changes.Add("Uid", new { From = old.Uid, To = newData.Uid });
+        if (old.Status != newData.Status)
+            changes.Add("Status", new { From = old.Status, To = newData.Status });
+        if (old.UserId != newData.UserId)
+            changes.Add("UserId", new { From = old.UserId, To = newData.UserId });
+        if (old.KelasId != newData.KelasId)
+            changes.Add("KelasId", new { From = old.KelasId, To = newData.KelasId });
+
+        return changes;
     }
 }

@@ -1,8 +1,9 @@
 using AutoMapper;
+using Microsoft.AspNetCore.SignalR;
 using testing.DTOs;
+using testing.Hubs;
 using testing.Models;
 using testing.Repositories;
-
 namespace testing.Services;
 
 public class AksesLogService : IAksesLogService
@@ -14,6 +15,8 @@ public class AksesLogService : IAksesLogService
     private readonly IUserRepository _userRepository;
     private readonly IMapper _mapper;
     private readonly ILogger<AksesLogService> _logger;
+    private readonly IHubContext<LogHub> _hubContext;
+    private readonly IBroadcastService _broadcastService;
 
     // Timezone untuk WIB (UTC+7)
     private static readonly TimeZoneInfo WibTimeZone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
@@ -25,7 +28,9 @@ public class AksesLogService : IAksesLogService
         IRuanganRepository ruanganRepository,
         IUserRepository userRepository,
         IMapper mapper,
-        ILogger<AksesLogService> logger)
+        ILogger<AksesLogService> logger,
+        IHubContext<LogHub> hubContext,
+        IBroadcastService broadcastService = null)
     {
         _aksesLogRepository = aksesLogRepository;
         _kartuRepository = kartuRepository;
@@ -34,14 +39,16 @@ public class AksesLogService : IAksesLogService
         _userRepository = userRepository;
         _mapper = mapper;
         _logger = logger;
+        _hubContext = hubContext;
+        _broadcastService = broadcastService;
     }
 
-    // Method helper untuk konversi UTC ke WIB
+    //  konversi UTC ke WIB
     private AksesLogDto ConvertToWibDto(AksesLog aksesLog)
     {
         var dto = _mapper.Map<AksesLogDto>(aksesLog);
 
-        // Konversi UTC ke WIB untuk display
+        // Konversi UTC ke WIB  ()display)
         dto.TimestampMasuk = TimeZoneInfo.ConvertTimeFromUtc(aksesLog.TimestampMasuk, WibTimeZone);
         if (aksesLog.TimestampKeluar.HasValue)
         {
@@ -202,6 +209,31 @@ public class AksesLogService : IAksesLogService
             }
 
             _logger.LogInformation("Akses log deleted: {Id}", id);
+
+            // TAMBAHKAN NOTIFIKASI SIGNALR
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("AksesLogDeleted", new
+                {
+                    Id = id,
+                    Timestamp = DateTime.UtcNow,
+                    Message = $"Akses log dengan ID {id} telah dihapus",
+                    KartuUid = aksesLog.Kartu?.Uid ?? "Unknown",
+                    Ruangan = aksesLog.Ruangan?.Nama ?? "Unknown"
+                });
+
+                await _hubContext.Clients.Group("admin").SendAsync("SystemNotification", new
+                {
+                    Type = "AKSES_LOG_DELETED",
+                    Data = new { Id = id, DeletedAt = DateTime.UtcNow },
+                    Message = $"Akses log ID {id} dihapus dari sistem"
+                });
+            }
+            catch (Exception hubEx)
+            {
+                _logger.LogWarning(hubEx, "Gagal mengirim notifikasi SignalR untuk penghapusan akses log");
+            }
+
             return ApiResponse<object>.SuccessResult(null, "Akses log berhasil dihapus");
         }
         catch (Exception ex)
@@ -234,6 +266,20 @@ public class AksesLogService : IAksesLogService
                 TotalRuangan = totalRuangan,
                 TotalUsers = totalUsers
             };
+
+            // OPTIONAL: Broadcast stats update via SignalR
+            try
+            {
+                await _hubContext.Clients.Group("dashboard").SendAsync("DashboardStatsUpdated", new
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Stats = stats
+                });
+            }
+            catch (Exception hubEx)
+            {
+                _logger.LogDebug(hubEx, "Gagal broadcast dashboard stats");
+            }
 
             return ApiResponse<DashboardStatsDto>.SuccessResult(stats);
         }

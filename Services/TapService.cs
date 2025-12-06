@@ -310,45 +310,46 @@ public class TapService : ITapService
         return "Tidak Teridentifikasi";
     }
 
-    // METHOD BARU: KIRIM NOTIFIKASI SIGNALR
+    // SEND NOTIFIKASI SIGNALR
     private async Task SendSignalRNotification(AksesLog aksesLog, Kartu kartu, Ruangan ruangan, DateTime tapTime, string? durasi, string eventType, string identitas)
     {
         try
         {
-            // Konversi waktu dari UTC ke WIB untuk display
-            var masukWib = TimeZoneInfo.ConvertTimeFromUtc(aksesLog.TimestampMasuk, WibTimeZone);
-            var keluarWib = aksesLog.TimestampKeluar.HasValue ?
-                           TimeZoneInfo.ConvertTimeFromUtc(aksesLog.TimestampKeluar.Value, WibTimeZone) :
-                           (DateTime?)null;
-
-            var logData = new
+            var notification = new
             {
-                Id = aksesLog.Id,
-                KartuUid = kartu.Uid,
-                Ruangan = ruangan.Nama,
-                Masuk = masukWib.ToString("yyyy-MM-dd HH:mm:ss"),
-                Keluar = keluarWib?.ToString("yyyy-MM-dd HH:mm:ss"),
-                Status = aksesLog.Status,
-                Durasi = durasi ?? "Masih aktif",
-                Identitas = identitas,
+                EventId = Guid.NewGuid(),
                 EventType = eventType,
-                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                Timestamp = DateTime.UtcNow,
+                Data = new
+                {
+                    LogId = aksesLog.Id,
+                    KartuUid = kartu.Uid,
+                    Ruangan = ruangan.Nama,
+                    RuanganId = ruangan.Id,
+                    Identitas = identitas,
+                    WaktuMasuk = aksesLog.TimestampMasuk,
+                    WaktuKeluar = aksesLog.TimestampKeluar,
+                    Durasi = durasi,
+                    Status = aksesLog.Status
+                }
             };
 
             if (eventType == "CHECKIN")
             {
-                await _hubContext.Clients.All.SendAsync("ReceiveNewLog", logData);
-                _logger.LogInformation("SignalR CHECK-IN notification sent for identitas: {Identitas}", identitas);
+                await _hubContext.Clients.All.SendAsync("ReceiveCheckIn", notification);
+                await _hubContext.Clients.Group("dashboard").SendAsync("UpdateDashboard", notification);
             }
             else
             {
-                await _hubContext.Clients.All.SendAsync("ReceiveUpdatedLog", logData);
-                _logger.LogInformation("SignalR CHECK-OUT notification sent for identitas: {Identitas}", identitas);
+                await _hubContext.Clients.All.SendAsync("ReceiveCheckOut", notification);
+                await _hubContext.Clients.Group("dashboard").SendAsync("UpdateDashboard", notification);
             }
+
+            _logger.LogInformation($"SignalR notification sent for {eventType}: {kartu.Uid}");
         }
-        catch (Exception hubEx)
+        catch (Exception ex)
         {
-            _logger.LogWarning(hubEx, "Failed to send SignalR notification, but tap was successful");
+            _logger.LogError(ex, "Failed to send SignalR notification");
         }
     }
 

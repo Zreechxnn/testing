@@ -1,5 +1,7 @@
 using AutoMapper;
+using Microsoft.AspNetCore.SignalR;
 using testing.DTOs;
+using testing.Hubs;
 using testing.Models;
 using testing.Repositories;
 
@@ -10,15 +12,18 @@ public class KelasService : IKelasService
     private readonly IKelasRepository _kelasRepository;
     private readonly IMapper _mapper;
     private readonly ILogger<KelasService> _logger;
+    private readonly IHubContext<LogHub> _hubContext; // TAMBAHKAN INI
 
     public KelasService(
         IKelasRepository kelasRepository,
         IMapper mapper,
-        ILogger<KelasService> logger)
+        ILogger<KelasService> logger,
+        IHubContext<LogHub> hubContext) // TAMBAHKAN PARAMETER
     {
         _kelasRepository = kelasRepository;
         _mapper = mapper;
         _logger = logger;
+        _hubContext = hubContext; // ASSIGN
     }
 
     public async Task<ApiResponse<List<KelasDto>>> GetAllKelas()
@@ -83,6 +88,10 @@ public class KelasService : IKelasService
             _logger.LogInformation("Kelas created: {Nama}", kelas.Nama);
 
             var kelasDto = _mapper.Map<KelasDto>(kelas);
+
+            // TAMBAHKAN NOTIFIKASI SIGNALR
+            await SendKelasNotification("KELAS_CREATED", kelasDto, $"Kelas baru '{kelas.Nama}' berhasil ditambahkan");
+
             return ApiResponse<KelasDto>.SuccessResult(kelasDto, "Kelas berhasil ditambahkan");
         }
         catch (Exception ex)
@@ -113,6 +122,9 @@ public class KelasService : IKelasService
                 return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar");
             }
 
+            // Simpan nama lama untuk notifikasi
+            var namaLama = kelas.Nama;
+
             _mapper.Map(request, kelas);
             _kelasRepository.Update(kelas);
             var saved = await _kelasRepository.SaveAsync();
@@ -125,6 +137,11 @@ public class KelasService : IKelasService
             _logger.LogInformation("Kelas updated: {Id} - {Nama}", kelas.Id, kelas.Nama);
 
             var kelasDto = _mapper.Map<KelasDto>(kelas);
+
+            // TAMBAHKAN NOTIFIKASI SIGNALR
+            await SendKelasNotification("KELAS_UPDATED", kelasDto,
+                $"Kelas '{namaLama}' berhasil diupdate menjadi '{kelas.Nama}'");
+
             return ApiResponse<KelasDto>.SuccessResult(kelasDto, "Kelas berhasil diupdate");
         }
         catch (Exception ex)
@@ -153,6 +170,14 @@ public class KelasService : IKelasService
             }
 
             _logger.LogInformation("Kelas deleted: {Id} - {Nama}", kelas.Id, kelas.Nama);
+
+            // TAMBAHKAN NOTIFIKASI SIGNALR
+            await SendKelasNotification("KELAS_DELETED", new KelasDto
+            {
+                Id = id,
+                Nama = kelas.Nama
+            }, $"Kelas '{kelas.Nama}' berhasil dihapus");
+
             return ApiResponse<object>.SuccessResult(null!, "Kelas berhasil dihapus");
         }
         catch (Exception ex)
@@ -187,5 +212,43 @@ public class KelasService : IKelasService
             _logger.LogError(ex, "Error getting kelas stats: {Id}", id);
             return ApiResponse<KelasStatsDto>.ErrorResult("Gagal mengambil statistik kelas");
         }
+    }
+
+    private async Task SendKelasNotification(string eventType, KelasDto kelasDto, string customMessage = null)
+    {
+        try
+        {
+            var notification = new
+            {
+                EventId = Guid.NewGuid(),
+                EventType = eventType,
+                Timestamp = DateTime.UtcNow,
+                Data = kelasDto,
+                Message = customMessage ?? $"Kelas {kelasDto.Nama} telah {GetEventAction(eventType)}"
+            };
+
+            // Kirim ke semua client yang terhubung
+            await _hubContext.Clients.All.SendAsync("KelasNotification", notification);
+
+            // Kirim ke grup admin untuk logging sistem
+            await _hubContext.Clients.Group("admin").SendAsync("SystemNotification", notification);
+
+            _logger.LogDebug($"SignalR notification sent for {eventType}: {kelasDto.Nama}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, $"Failed to send SignalR notification for {eventType}");
+        }
+    }
+
+    private string GetEventAction(string eventType)
+    {
+        return eventType switch
+        {
+            "KELAS_CREATED" => "dibuat",
+            "KELAS_UPDATED" => "diperbarui",
+            "KELAS_DELETED" => "dihapus",
+            _ => "diubah"
+        };
     }
 }

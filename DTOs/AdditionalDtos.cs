@@ -84,8 +84,6 @@ public class AksesLogDto
     public string? RuanganNama { get; set; }
     public string? UserUsername { get; set; }
     public string? KelasNama { get; set; }
-
-    // HAPUS property WIB karena sekarang data sudah dalam WIB
 }
 
 public class DashboardStatsDto

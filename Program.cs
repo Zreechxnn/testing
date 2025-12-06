@@ -45,9 +45,15 @@ if (string.IsNullOrEmpty(jwtSecretKey))
 }
 var key = Encoding.UTF8.GetBytes(jwtSecretKey);
 
-// --- 2. Service Registrations ---
 
-// Controllers & JSON Serializer
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = true;
+    options.MaximumReceiveMessageSize = 1024 * 1024; // 1MB
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
+    options.KeepAliveInterval = TimeSpan.FromSeconds(10);
+});
+
 builder.Services.AddControllers().AddJsonOptions(opts =>
 {
     opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -93,6 +99,8 @@ builder.Services.AddScoped<IKelasService, KelasService>();
 builder.Services.AddScoped<IRuanganService, RuanganService>();
 builder.Services.AddScoped<ITapService, TapService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddSingleton<IBroadcastService, BroadcastService>();
+builder.Services.AddHostedService(provider => provider.GetService<IBroadcastService>() as BroadcastService);
 
 builder.Services.AddScoped<IKartuRepository, KartuRepository>();
 builder.Services.AddScoped<IAksesLogRepository, AksesLogRepository>();
@@ -100,7 +108,6 @@ builder.Services.AddScoped<IKelasRepository, KelasRepository>();
 builder.Services.AddScoped<IRuanganRepository, RuanganRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
-// CORS Configuration
 var corsOrigins = Environment.GetEnvironmentVariable("CORS__Origins");
 Console.WriteLine($"[🔒 CORS CONFIG] Raw Value: '{corsOrigins}'");
 
@@ -109,15 +116,16 @@ builder.Services.AddCors(options =>
     {
         if (string.IsNullOrEmpty(corsOrigins) || corsOrigins == "*")
         {
-            Console.WriteLine("[⚠️ CORS WARNING] Mode Wildcard Aktif");
-            p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+            p.AllowAnyOrigin()
+             .AllowAnyHeader()
+             .AllowAnyMethod()
+             .AllowCredentials();
         }
         else
         {
             var origins = corsOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
                                      .Select(o => o.Trim())
                                      .ToArray();
-            Console.WriteLine($"[✅ CORS ACTIVE] Whitelisted: {string.Join(", ", origins)}");
 
             p.WithOrigins(origins)
              .AllowAnyHeader()
@@ -190,9 +198,9 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
+app.UseMiddleware<SignalRLoggingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-// --- MIDDLEWARE SATPAM (Custom Security Logic) ---
 app.Use(async (context, next) =>
 {
     var requestPath = context.Request.Path.Value?.ToLower();
@@ -244,6 +252,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapHub<LogHub>("/logHub");
+app.MapHub<LogHub>("/hubs/log");
 
 await app.RunAsync();

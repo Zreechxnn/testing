@@ -1,5 +1,7 @@
 using AutoMapper;
+using Microsoft.AspNetCore.SignalR;
 using testing.DTOs;
+using testing.Hubs;
 using testing.Models;
 using testing.Repositories;
 
@@ -10,15 +12,18 @@ public class RuanganService : IRuanganService
     private readonly IRuanganRepository _ruanganRepository;
     private readonly IMapper _mapper;
     private readonly ILogger<RuanganService> _logger;
+    private readonly IHubContext<LogHub> _hubContext; // TAMBAHKAN INI
 
     public RuanganService(
         IRuanganRepository ruanganRepository,
         IMapper mapper,
-        ILogger<RuanganService> logger)
+        ILogger<RuanganService> logger,
+        IHubContext<LogHub> hubContext) // TAMBAHKAN PARAMETER
     {
         _ruanganRepository = ruanganRepository;
         _mapper = mapper;
         _logger = logger;
+        _hubContext = hubContext; // ASSIGN
     }
 
     public async Task<ApiResponse<List<RuanganDto>>> GetAllRuangan()
@@ -83,6 +88,10 @@ public class RuanganService : IRuanganService
             _logger.LogInformation("Ruangan created: {Nama}", ruangan.Nama);
 
             var ruanganDto = _mapper.Map<RuanganDto>(ruangan);
+
+            // TAMBAHKAN NOTIFIKASI SIGNALR
+            await SendRuanganNotification("RUANGAN_CREATED", ruanganDto);
+
             return ApiResponse<RuanganDto>.SuccessResult(ruanganDto, "Ruangan berhasil ditambahkan");
         }
         catch (Exception ex)
@@ -125,6 +134,10 @@ public class RuanganService : IRuanganService
             _logger.LogInformation("Ruangan updated: {Id} - {Nama}", ruangan.Id, ruangan.Nama);
 
             var ruanganDto = _mapper.Map<RuanganDto>(ruangan);
+
+            // TAMBAHKAN NOTIFIKASI SIGNALR
+            await SendRuanganNotification("RUANGAN_UPDATED", ruanganDto);
+
             return ApiResponse<RuanganDto>.SuccessResult(ruanganDto, "Ruangan berhasil diupdate");
         }
         catch (Exception ex)
@@ -149,6 +162,13 @@ public class RuanganService : IRuanganService
                 return ApiResponse<object>.ErrorResult("Tidak dapat menghapus ruangan karena memiliki riwayat akses");
             }
 
+            // Simpan data untuk notifikasi
+            var ruanganDto = new RuanganDto
+            {
+                Id = ruangan.Id,
+                Nama = ruangan.Nama
+            };
+
             _ruanganRepository.Remove(ruangan);
             var saved = await _ruanganRepository.SaveAsync();
 
@@ -158,7 +178,11 @@ public class RuanganService : IRuanganService
             }
 
             _logger.LogInformation("Ruangan deleted: {Id} - {Nama}", ruangan.Id, ruangan.Nama);
-            return ApiResponse<object>.SuccessResult(null!, "Ruangan berhasil dihapus"); // Fixed: menggunakan null!
+
+            // TAMBAHKAN NOTIFIKASI SIGNALR
+            await SendRuanganNotification("RUANGAN_DELETED", ruanganDto);
+
+            return ApiResponse<object>.SuccessResult(null!, "Ruangan berhasil dihapus");
         }
         catch (Exception ex)
         {
@@ -194,5 +218,44 @@ public class RuanganService : IRuanganService
             _logger.LogError(ex, "Error getting ruangan stats: {Id}", id);
             return ApiResponse<RuanganStatsDto>.ErrorResult("Gagal mengambil statistik ruangan");
         }
+    }
+
+    // METHOD BARU: Helper untuk mengirim notifikasi SignalR
+    private async Task SendRuanganNotification(string eventType, RuanganDto ruanganDto, string customMessage = null)
+    {
+        try
+        {
+            var notification = new
+            {
+                EventId = Guid.NewGuid(),
+                EventType = eventType,
+                Timestamp = DateTime.UtcNow,
+                Data = ruanganDto,
+                Message = customMessage ?? $"Ruangan {ruanganDto.Nama} telah {GetEventAction(eventType)}"
+            };
+
+            // Kirim ke semua client yang terhubung
+            await _hubContext.Clients.All.SendAsync("RuanganNotification", notification);
+
+            // Kirim ke grup admin untuk logging sistem
+            await _hubContext.Clients.Group("admin").SendAsync("SystemNotification", notification);
+
+            _logger.LogDebug($"SignalR notification sent for {eventType}: {ruanganDto.Nama}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, $"Failed to send SignalR notification for {eventType}");
+        }
+    }
+
+    private string GetEventAction(string eventType)
+    {
+        return eventType switch
+        {
+            "RUANGAN_CREATED" => "dibuat",
+            "RUANGAN_UPDATED" => "diperbarui",
+            "RUANGAN_DELETED" => "dihapus",
+            _ => "diubah"
+        };
     }
 }

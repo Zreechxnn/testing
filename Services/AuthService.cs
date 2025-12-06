@@ -1,6 +1,4 @@
 using AutoMapper;
-using Microsoft.AspNetCore.SignalR;
-using testing.Hubs;
 using testing.DTOs;
 using testing.Models;
 using testing.Repositories;
@@ -16,7 +14,6 @@ public class AuthService : IAuthService
     private readonly IUserRepository _userRepository;
     private readonly IMapper _mapper;
     private readonly ILogger<AuthService> _logger;
-    private readonly IHubContext<LogHub> _hubContext;
 
     // JWT Settings
     private readonly string _jwtSecretKey;
@@ -28,13 +25,11 @@ public class AuthService : IAuthService
         IUserRepository userRepository,
         IMapper mapper,
         ILogger<AuthService> logger,
-        IConfiguration configuration,
-        IHubContext<LogHub> hubContext)
+        IConfiguration configuration)
     {
         _userRepository = userRepository;
         _mapper = mapper;
         _logger = logger;
-        _hubContext = hubContext;
 
         // Load JWT settings
         _jwtSecretKey = Environment.GetEnvironmentVariable("JwtSettings__SecretKey")
@@ -75,14 +70,6 @@ public class AuthService : IAuthService
             }
 
             var token = GenerateJwtToken(user);
-
-            // Kirim notifikasi ke SignalR
-            await _hubContext.Clients.All.SendAsync("UserLoggedIn", new
-            {
-                userId = user.Id,
-                username = user.Username,
-                timestamp = DateTime.UtcNow
-            });
 
             var response = new UserLoginResponse
             {

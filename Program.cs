@@ -134,7 +134,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false;
+    options.RequireHttpsMetadata = false; // Set true for production
     options.SaveToken = true;
 
     options.TokenValidationParameters = new TokenValidationParameters
@@ -192,7 +192,7 @@ builder.Services.AddAuthentication(options =>
             if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
             {
                 Console.WriteLine("[JWT ERROR] Token expired!");
-                context.Response.Headers["Token-Expired"] = "true";
+                context.Response.Headers["Token-Expired"] = "true"; // Perbaikan: gunakan indexer bukan Add
             }
 
             return Task.CompletedTask;
@@ -249,7 +249,7 @@ app.Use(async (context, next) =>
          requestPath == "/" ||
          requestPath.StartsWith("/loghub") ||  // Untuk SignalR
          requestPath == "/loghub" ||
-         method == "OPTIONS"))
+         method == "OPTIONS"))  // Izinkan preflight requests
     {
         await next();
         return;
@@ -287,8 +287,10 @@ app.Use(async (context, next) =>
 
     await next();
 });
+// --------------------------------------
 
 app.UseCors("AllowFrontend");
+
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -20,11 +20,12 @@ IdentityModelEventSource.ShowPII = true;
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 var builder = WebApplication.CreateBuilder(args);
-// Load .env
+
+// 1. Load Environment
 Env.Load();
 builder.Configuration.AddEnvironmentVariables();
 
-// Database
+// 2. Database
 var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
     ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
@@ -35,7 +36,7 @@ builder.Services.AddDbContext<LabDbContext>(options =>
 });
 Console.WriteLine("✅ Database Provider: PostgreSQL");
 
-// JWT Secret
+// 3. JWT Secret
 var jwtSecretKey = Environment.GetEnvironmentVariable("JwtSettings__SecretKey")?.Trim();
 if (string.IsNullOrEmpty(jwtSecretKey))
 {
@@ -43,14 +44,14 @@ if (string.IsNullOrEmpty(jwtSecretKey))
 }
 var key = Encoding.UTF8.GetBytes(jwtSecretKey);
 
-//  Controller & JSON
+// 4. Controller & JSON
 builder.Services.AddControllers().AddJsonOptions(opts =>
 {
     opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
     opts.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 });
 
-// Swagger
+// 5. Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -73,7 +74,7 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Services & Repositories
+// 6. Services & Repositories
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddFluentValidationClientsideAdapters();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
@@ -95,7 +96,7 @@ builder.Services.AddScoped<IKelasRepository, KelasRepository>();
 builder.Services.AddScoped<IRuanganRepository, RuanganRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
-// CORS Configuration
+// 7. CORS Configuration
 var corsOrigins = Environment.GetEnvironmentVariable("CORS__Origins");
 Console.WriteLine($"[🔒 CORS CONFIG] Raw Value: '{corsOrigins}'");
 
@@ -124,7 +125,7 @@ builder.Services.AddCors(options =>
         }
     }));
 
-// Authentication & SignalR Token Logic
+// 8. Authentication & SignalR Token Logic
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
 {
@@ -146,23 +147,33 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
     options.Events = new JwtBearerEvents
     {
+        // GANTI BAGIAN INI DI DALAM AddJwtBearer -> Events
+
         OnMessageReceived = context =>
         {
+            string token = null;
+
             var accessToken = context.Request.Query["access_token"];
             var path = context.HttpContext.Request.Path;
 
             if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/logHub"))
             {
-                context.Token = accessToken;
-                Console.WriteLine($"[SIGNALR AUTH] Token didapat dari URL untuk hub.");
-                return Task.CompletedTask;
+                Console.WriteLine($"[SIGNALR AUTH] Token mentah dari URL: {accessToken}");
+                token = accessToken;
             }
 
             var authHeader = context.Request.Headers["Authorization"].ToString();
-            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrEmpty(token) && !string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
-                context.Token = authHeader.Substring("Bearer ".Length).Trim().Trim('"');
+                token = authHeader.Substring("Bearer ".Length).Trim();
             }
+
+            if (!string.IsNullOrEmpty(token))
+            {
+                token = token.Replace("\"", "").Trim();
+                context.Token = token;
+            }
+
             return Task.CompletedTask;
         },
         OnAuthenticationFailed = context =>
@@ -176,7 +187,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
-// Middleware Pipeline
+
+// --- MIDDLEWARE PIPELINE ---
+
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -186,18 +199,22 @@ app.UseSwaggerUI(c =>
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+// 1. CORS HARUS DI ATAS (PENTING!)
 app.UseCors("AllowFrontend");
 
+// 2. Middleware "Satpam" Manual
 app.Use(async (context, next) =>
 {
     var requestPath = context.Request.Path.Value?.ToLower();
 
+    // Skip check untuk Swagger atau Root
     if (requestPath != null && (requestPath.Contains("/swagger") || requestPath == "/"))
     {
         await next();
         return;
     }
 
+    // PENTING: Izinkan Preflight Request (OPTIONS) lewat
     if (context.Request.Method == "OPTIONS")
     {
         await next();
@@ -209,6 +226,7 @@ app.Use(async (context, next) =>
 
     Console.WriteLine($"[👮 SATPAM] {context.Request.Method} {requestPath} | Origin: {origin}");
 
+    // Logika Whitelist Manual (Opsional karena sudah ada UseCors, tapi tetap kita simpan sesuai request)
     var corsOriginsEnv = Environment.GetEnvironmentVariable("CORS__Origins");
     if (!string.IsNullOrEmpty(corsOriginsEnv) && corsOriginsEnv != "*" && !string.IsNullOrEmpty(origin))
     {
@@ -229,9 +247,11 @@ app.Use(async (context, next) =>
     await next();
 });
 
+// 3. Auth Middleware
 app.UseAuthentication();
 app.UseAuthorization();
 
+// 4. Endpoints
 app.MapControllers();
 app.MapHub<LogHub>("/logHub"); // Endpoint SignalR
 

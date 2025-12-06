@@ -127,17 +127,10 @@ builder.Services.AddCors(options =>
     }));
 
 // Authentication Configuration
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false; // Set true for production
-    options.SaveToken = true;
-
-    options.TokenValidationParameters = new TokenValidationParameters
+    var validationParams = new TokenValidationParameters
     {
         ValidateIssuer = true,
         ValidateAudience = true,
@@ -146,77 +139,39 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = "LabAccessAPI",
         ValidAudience = "LabAccessClient",
         IssuerSigningKey = new SymmetricSecurityKey(key),
-        NameClaimType = ClaimTypes.NameIdentifier,
-        RoleClaimType = ClaimTypes.Role,
+        NameClaimType = "name",
+        RoleClaimType = "role",
         ClockSkew = TimeSpan.Zero
     };
+
+    options.TokenValidationParameters = validationParams;
 
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
         {
-            Console.WriteLine($"[JWT DEBUG] Path: {context.Request.Path}");
-
-            // Untuk SignalR WebSocket - ambil dari query string
-            var accessToken = context.Request.Query["access_token"].ToString();
-            if (!string.IsNullOrEmpty(accessToken) &&
-                context.Request.Path.StartsWithSegments("/logHub"))
+            var authHeader = context.Request.Headers["Authorization"].ToString();
+            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
-                context.Token = accessToken;
-                Console.WriteLine($"[JWT DEBUG] SignalR token from query: {accessToken.Substring(0, Math.Min(10, accessToken.Length))}...");
-            }
-            // Untuk HTTP requests - ambil dari header Authorization
-            else
-            {
-                var authHeader = context.Request.Headers["Authorization"].ToString();
-                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                var token = authHeader.Substring("Bearer ".Length).Trim();
+                try
                 {
-                    context.Token = authHeader.Substring("Bearer ".Length).Trim();
-                    Console.WriteLine($"[JWT DEBUG] HTTP token from header: {context.Token.Substring(0, Math.Min(10, context.Token.Length))}...");
+                    var handler = new JwtSecurityTokenHandler();
+                    var principal = handler.ValidateToken(token, validationParams, out var validatedToken);
+                    context.Principal = principal;
+                    context.Success();
+                    Console.WriteLine($"[🎉 MANUAL OVERRIDE] Token Valid! User: {principal.Identity?.Name}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[❌ MANUAL FAIL] Token ditolak: {ex.Message}");
                 }
             }
-
-            if (string.IsNullOrEmpty(context.Token))
-            {
-                Console.WriteLine("[JWT DEBUG] No token found!");
-            }
-
             return Task.CompletedTask;
         },
-
         OnAuthenticationFailed = context =>
         {
-            Console.WriteLine($"[JWT ERROR] Authentication failed: {context.Exception.Message}");
-            Console.WriteLine($"[JWT ERROR] Exception details: {context.Exception}");
-
-            if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
-            {
-                Console.WriteLine("[JWT ERROR] Token expired!");
-                context.Response.Headers["Token-Expired"] = "true"; // Perbaikan: gunakan indexer bukan Add
-            }
-
-            return Task.CompletedTask;
-        },
-
-        OnChallenge = context =>
-        {
-            Console.WriteLine($"[JWT CHALLENGE] Challenge issued: {context.Error}, {context.ErrorDescription}");
-            return Task.CompletedTask;
-        },
-
-        OnTokenValidated = context =>
-        {
-            var claims = context.Principal?.Claims;
-            Console.WriteLine($"[JWT SUCCESS] Token validated for user: {context.Principal?.Identity?.Name}");
-
-            if (claims != null)
-            {
-                foreach (var claim in claims)
-                {
-                    Console.WriteLine($"[JWT CLAIM] {claim.Type}: {claim.Value}");
-                }
-            }
-
+            Console.WriteLine($"[🔥 SYSTEM FAIL] Auth Failed: {context.Exception.Message}");
             return Task.CompletedTask;
         }
     };
@@ -241,15 +196,9 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.Use(async (context, next) =>
 {
     var requestPath = context.Request.Path.Value?.ToLower();
-    var method = context.Request.Method;
 
-    // Bypass untuk Swagger, Root, dan SignalR Hub (untuk OPTIONS juga)
-    if (requestPath != null &&
-        (requestPath.Contains("/swagger") ||
-         requestPath == "/" ||
-         requestPath.StartsWith("/loghub") ||  // Untuk SignalR
-         requestPath == "/loghub" ||
-         method == "OPTIONS"))  // Izinkan preflight requests
+    // Bypass untuk Swagger dan Root
+    if (requestPath != null && (requestPath.Contains("/swagger") || requestPath == "/"))
     {
         await next();
         return;
@@ -264,12 +213,12 @@ app.Use(async (context, next) =>
                         .Select(o => o.Trim().TrimEnd('/'))
                         .ToList();
 
-    Console.WriteLine($"[👮 SATPAM CEK] Path: {requestPath} | Method: {method} | Origin: '{origin}' | Referer: '{referer}'");
+    Console.WriteLine($"[👮 SATPAM CEK] Path: {requestPath} | Origin: '{origin}' | Referer: '{referer}'");
 
     // LOGIKA: Jika tidak ada Origin/Referer (IoT/Mobile/Postman), IZINKAN lewat.
     if (string.IsNullOrEmpty(origin) && string.IsNullOrEmpty(referer))
     {
-        Console.WriteLine("[ℹ️ NON-BROWSER] Request tanpa identitas (IoT/App/Postman). Diizinkan lewat.");
+        Console.WriteLine("[ℹ️ NON-BROWSER] Request tanpa identitas (IoT/App). Diizinkan lewat.");
     }
     // Jika ada Origin (Browser), CEK WHITELIST.
     else if (!string.IsNullOrEmpty(origin) && allowedOrigins != null)
@@ -296,49 +245,5 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<LogHub>("/logHub");
-
-// Tambahkan endpoint untuk testing JWT
-app.MapGet("/api/test/token", (HttpContext context) =>
-{
-    var authHeader = context.Request.Headers["Authorization"].ToString();
-    var token = authHeader.Replace("Bearer ", "");
-
-    Console.WriteLine($"Testing token: {token.Substring(0, Math.Min(20, token.Length))}...");
-
-    try
-    {
-        var handler = new JwtSecurityTokenHandler();
-        var jwtToken = handler.ReadJwtToken(token);
-
-        return Results.Ok(new
-        {
-            success = true,
-            message = "Token valid",
-            claims = jwtToken.Claims.Select(c => new { c.Type, c.Value }),
-            expires = jwtToken.ValidTo
-        });
-    }
-    catch (Exception ex)
-    {
-        return Results.BadRequest(new
-        {
-            success = false,
-            message = "Token invalid",
-            error = ex.Message
-        });
-    }
-}).RequireAuthorization();
-
-// Endpoint untuk testing SignalR connection tanpa auth (debug)
-app.MapGet("/api/test/signalr", () =>
-{
-    return Results.Ok(new
-    {
-        message = "SignalR endpoint available",
-        hubUrl = "/logHub",
-        supportedTransports = new[] { "WebSockets", "ServerSentEvents", "LongPolling" },
-        timestamp = DateTime.UtcNow
-    });
-});
 
 await app.RunAsync();

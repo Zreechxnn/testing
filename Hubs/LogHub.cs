@@ -19,16 +19,17 @@ namespace testing.Hubs
             var userName = Context.User?.FindFirst("name")?.Value ?? "Unknown";
             var connectionId = Context.ConnectionId;
 
-            ConnectedUsers.Add(userId);
+            if (!string.IsNullOrEmpty(userId))
+            {
+                ConnectedUsers.Add(userId);
+            }
+
             _totalConnections++;
 
             Console.WriteLine($"[SignalR] User {userName} ({userId}) connected. Connection ID: {connectionId}");
             Console.WriteLine($"[SignalR] Total active users: {ConnectedUsers.Count}, Total connections: {_totalConnections}");
 
-            // Notify all clients about new connection
-            await Clients.All.SendAsync("UserConnected", userId);
-
-            // Send current stats
+            await Clients.All.SendAsync("UserConnected", userId ?? string.Empty);
             await SendDashboardStats();
 
             await base.OnConnectedAsync();
@@ -39,13 +40,15 @@ namespace testing.Hubs
             var userId = Context.UserIdentifier;
             var userName = Context.User?.FindFirst("name")?.Value ?? "Unknown";
 
-            ConnectedUsers.Remove(userId);
+            if (!string.IsNullOrEmpty(userId))
+            {
+                ConnectedUsers.Remove(userId);
+            }
 
             Console.WriteLine($"[SignalR] User {userName} ({userId}) disconnected. Exception: {exception?.Message}");
             Console.WriteLine($"[SignalR] Total active users: {ConnectedUsers.Count}");
 
-            // Notify all clients about disconnection
-            await Clients.All.SendAsync("UserDisconnected", userId);
+            await Clients.All.SendAsync("UserDisconnected", userId ?? string.Empty);
 
             await base.OnDisconnectedAsync(exception);
         }
@@ -64,19 +67,16 @@ namespace testing.Hubs
 
             Console.WriteLine($"[SignalR] Aktivitas dari {user} ({userId}): {aktivitasData}");
 
-            // Process and broadcast to all clients
             var aktivitas = new
             {
                 id = Guid.NewGuid().ToString(),
                 pengirim = user,
-                userId = userId,
+                userId = userId ?? string.Empty,
                 timestamp = DateTime.UtcNow,
                 data = aktivitasData
             };
 
             await Clients.All.SendAsync("ReceiveAktivitas", aktivitas);
-
-            // Update dashboard stats
             await SendDashboardStats();
         }
 
@@ -98,13 +98,11 @@ namespace testing.Hubs
             await Clients.All.SendAsync("ReceiveDashboardStats", stats);
         }
 
-        // Method untuk mengirim notifikasi ke user tertentu
         public async Task SendToUser(string userId, object message)
         {
             await Clients.User(userId).SendAsync("ReceiveNotification", message);
         }
 
-        // Method untuk mengirim ke semua kecuali pengirim
         public async Task Broadcast(object message)
         {
             await Clients.AllExcept(Context.ConnectionId).SendAsync("BroadcastMessage", message);

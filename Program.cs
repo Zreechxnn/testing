@@ -134,7 +134,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false; // Set true for production
+    options.RequireHttpsMetadata = false;
     options.SaveToken = true;
 
     options.TokenValidationParameters = new TokenValidationParameters
@@ -158,7 +158,7 @@ builder.Services.AddAuthentication(options =>
             Console.WriteLine($"[JWT DEBUG] Path: {context.Request.Path}");
 
             // Untuk SignalR WebSocket - ambil dari query string
-            var accessToken = context.Request.Query["access_token"];
+            var accessToken = context.Request.Query["access_token"].ToString();
             if (!string.IsNullOrEmpty(accessToken) &&
                 context.Request.Path.StartsWithSegments("/logHub"))
             {
@@ -192,7 +192,7 @@ builder.Services.AddAuthentication(options =>
             if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
             {
                 Console.WriteLine("[JWT ERROR] Token expired!");
-                context.Response.Headers.Add("Token-Expired", "true");
+                context.Response.Headers["Token-Expired"] = "true";
             }
 
             return Task.CompletedTask;
@@ -249,7 +249,7 @@ app.Use(async (context, next) =>
          requestPath == "/" ||
          requestPath.StartsWith("/loghub") ||  // Untuk SignalR
          requestPath == "/loghub" ||
-         method == "OPTIONS"))  // Izinkan preflight requests
+         method == "OPTIONS"))
     {
         await next();
         return;
@@ -287,10 +287,8 @@ app.Use(async (context, next) =>
 
     await next();
 });
-// --------------------------------------
 
 app.UseCors("AllowFrontend");
-
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -300,7 +298,8 @@ app.MapHub<LogHub>("/logHub");
 // Tambahkan endpoint untuk testing JWT
 app.MapGet("/api/test/token", (HttpContext context) =>
 {
-    var token = context.Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
+    var authHeader = context.Request.Headers["Authorization"].ToString();
+    var token = authHeader.Replace("Bearer ", "");
 
     Console.WriteLine($"Testing token: {token.Substring(0, Math.Min(20, token.Length))}...");
 

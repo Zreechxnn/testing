@@ -175,7 +175,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/logHub"))
             {
                 context.Token = accessToken;
-                Console.WriteLine($"[SignalR Auth] Token diterima dari query string: {accessToken.Substring(0, Math.Min(20, accessToken.Length))}...");
+                // Console.WriteLine($"[SignalR Auth] Token diterima dari query string: {accessToken.Substring(0, Math.Min(20, accessToken.Length))}...");
             }
 
             return Task.CompletedTask;

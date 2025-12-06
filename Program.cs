@@ -20,10 +20,11 @@ IdentityModelEventSource.ShowPII = true;
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 var builder = WebApplication.CreateBuilder(args);
-
+// Load .env
 Env.Load();
 builder.Configuration.AddEnvironmentVariables();
 
+// Database
 var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
     ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
@@ -32,21 +33,24 @@ builder.Services.AddDbContext<LabDbContext>(options =>
     options.UseNpgsql(connectionString);
     options.EnableSensitiveDataLogging();
 });
-Console.WriteLine("✅ Database Provider: PostgreSQL (Fixed)");
+Console.WriteLine("✅ Database Provider: PostgreSQL");
 
+// JWT Secret
 var jwtSecretKey = Environment.GetEnvironmentVariable("JwtSettings__SecretKey")?.Trim();
 if (string.IsNullOrEmpty(jwtSecretKey))
 {
-    throw new Exception("🔥 FATAL ERROR: JWT Secret Key tidak ditemukan di .env! Pasang dulu.");
+    throw new Exception("🔥 FATAL ERROR: JWT Secret Key tidak ditemukan di .env!");
 }
 var key = Encoding.UTF8.GetBytes(jwtSecretKey);
 
+//  Controller & JSON
 builder.Services.AddControllers().AddJsonOptions(opts =>
 {
     opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
     opts.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 });
 
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -69,10 +73,11 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
+// Services & Repositories
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddFluentValidationClientsideAdapters();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(); // SignalR Service
 builder.Services.AddAutoMapper(typeof(Program));
 
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -90,6 +95,7 @@ builder.Services.AddScoped<IKelasRepository, KelasRepository>();
 builder.Services.AddScoped<IRuanganRepository, RuanganRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
+// CORS Configuration
 var corsOrigins = Environment.GetEnvironmentVariable("CORS__Origins");
 Console.WriteLine($"[🔒 CORS CONFIG] Raw Value: '{corsOrigins}'");
 
@@ -99,7 +105,10 @@ builder.Services.AddCors(options =>
         if (string.IsNullOrEmpty(corsOrigins) || corsOrigins == "*")
         {
             Console.WriteLine("[⚠️ CORS WARNING] Mode Wildcard Aktif");
-            p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+            p.SetIsOriginAllowed(_ => true) // Allow any origin explicitly for SignalR
+             .AllowAnyHeader()
+             .AllowAnyMethod()
+             .AllowCredentials(); // SignalR butuh ini
         }
         else
         {
@@ -115,6 +124,7 @@ builder.Services.AddCors(options =>
         }
     }));
 
+// Authentication & SignalR Token Logic
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
 {
@@ -138,28 +148,26 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     {
         OnMessageReceived = context =>
         {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/logHub"))
+            {
+                context.Token = accessToken;
+                Console.WriteLine($"[SIGNALR AUTH] Token didapat dari URL untuk hub.");
+                return Task.CompletedTask;
+            }
+
             var authHeader = context.Request.Headers["Authorization"].ToString();
             if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
-                var token = authHeader.Substring("Bearer ".Length).Trim();
-                try
-                {
-                    var handler = new JwtSecurityTokenHandler();
-                    var principal = handler.ValidateToken(token, validationParams, out var validatedToken);
-                    context.Principal = principal;
-                    context.Success();
-                    Console.WriteLine($"[🎉 MANUAL OVERRIDE] Token Valid! User: {principal.Identity?.Name}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[❌ MANUAL FAIL] Token ditolak: {ex.Message}");
-                }
+                context.Token = authHeader.Substring("Bearer ".Length).Trim().Trim('"');
             }
             return Task.CompletedTask;
         },
         OnAuthenticationFailed = context =>
         {
-            Console.WriteLine($"[🔥 SYSTEM FAIL] Auth Failed: {context.Exception.Message}");
+            Console.WriteLine($"[🔥 AUTH FAIL] {context.Exception.Message}");
             return Task.CompletedTask;
         }
     };
@@ -168,7 +176,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
-
+// Middleware Pipeline
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -177,6 +185,8 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+app.UseCors("AllowFrontend");
 
 app.Use(async (context, next) =>
 {
@@ -188,43 +198,41 @@ app.Use(async (context, next) =>
         return;
     }
 
+    if (context.Request.Method == "OPTIONS")
+    {
+        await next();
+        return;
+    }
+
     var origin = context.Request.Headers["Origin"].ToString();
     var referer = context.Request.Headers["Referer"].ToString();
 
+    Console.WriteLine($"[👮 SATPAM] {context.Request.Method} {requestPath} | Origin: {origin}");
+
     var corsOriginsEnv = Environment.GetEnvironmentVariable("CORS__Origins");
-    var allowedOrigins = corsOriginsEnv?
-                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(o => o.Trim().TrimEnd('/'))
-                        .ToList();
-
-    Console.WriteLine($"[👮 SATPAM CEK] Path: {requestPath} | Origin: '{origin}' | Referer: '{referer}'");
-
-    if (string.IsNullOrEmpty(origin) && string.IsNullOrEmpty(referer))
+    if (!string.IsNullOrEmpty(corsOriginsEnv) && corsOriginsEnv != "*" && !string.IsNullOrEmpty(origin))
     {
-        Console.WriteLine("[ℹ️ NON-BROWSER] Request tanpa identitas (IoT/App). Diizinkan lewat.");
-    }
-    else if (!string.IsNullOrEmpty(origin) && allowedOrigins != null)
-    {
+        var allowedOrigins = corsOriginsEnv.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                           .Select(o => o.Trim().TrimEnd('/'));
+
         bool isAllowed = allowedOrigins.Any(o => string.Equals(o, origin, StringComparison.OrdinalIgnoreCase));
+
         if (!isAllowed)
         {
-            Console.WriteLine($"[⛔ DITOLAK] Origin '{origin}' tidak ada di daftar whitelist!");
+            Console.WriteLine($"[⛔ DITOLAK] Origin '{origin}' tidak dikenal.");
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsync($"Akses Ditolak: Origin '{origin}' dilarang masuk.");
+            await context.Response.WriteAsync("Forbidden Origin");
             return;
         }
-        Console.WriteLine("[✅ BROWSER VALID] Origin terdaftar. Silakan masuk.");
     }
 
     await next();
 });
 
-app.UseCors("AllowFrontend");
-
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapHub<LogHub>("/logHub");
+app.MapHub<LogHub>("/logHub"); // Endpoint SignalR
 
 await app.RunAsync();

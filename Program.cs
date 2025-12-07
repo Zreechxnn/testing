@@ -18,7 +18,7 @@ using Microsoft.IdentityModel.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- 1. Load Environment & Configuration ---
+// Load Environment & Configuration ---
 Env.Load();
 builder.Configuration.AddEnvironmentVariables();
 
@@ -51,7 +51,7 @@ if (string.IsNullOrEmpty(jwtSecretKey))
 }
 var key = Encoding.UTF8.GetBytes(jwtSecretKey);
 
-
+// SignalR Configuration
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = true;
@@ -60,6 +60,7 @@ builder.Services.AddSignalR(options =>
     options.KeepAliveInterval = TimeSpan.FromSeconds(10);
 });
 
+// Controllers Configuration
 builder.Services.AddControllers().AddJsonOptions(opts =>
 {
     opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -89,11 +90,10 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Fluent Validation, SignalR, AutoMapper
+// Fluent Validation & AutoMapper
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddFluentValidationClientsideAdapters();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
-builder.Services.AddSignalR();
 builder.Services.AddAutoMapper(typeof(Program));
 
 // Dependency Injection (Services & Repositories)
@@ -106,7 +106,6 @@ builder.Services.AddScoped<IRuanganService, RuanganService>();
 builder.Services.AddScoped<ITapService, TapService>();
 builder.Services.AddScoped<IUserService, UserService>();
 
-// [ARSIKTETUR FIX] BroadcastService menggunakan Scoped agar bisa inject Repo & dipanggil TapService
 builder.Services.AddScoped<IBroadcastService, BroadcastService>();
 
 builder.Services.AddScoped<IKartuRepository, KartuRepository>();
@@ -115,6 +114,7 @@ builder.Services.AddScoped<IKelasRepository, KelasRepository>();
 builder.Services.AddScoped<IRuanganRepository, RuanganRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
+// CORS Configuration
 var corsOrigins = Environment.GetEnvironmentVariable("CORS__Origins");
 Console.WriteLine($"[🔒 CORS CONFIG] Raw Value: '{corsOrigins}'");
 
@@ -125,8 +125,7 @@ builder.Services.AddCors(options =>
         {
             p.AllowAnyOrigin()
              .AllowAnyHeader()
-             .AllowAnyMethod()
-             .AllowCredentials();
+             .AllowAnyMethod();
         }
         else
         {
@@ -197,7 +196,7 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// --- 3. HTTP Request Pipeline ---
+// HTTP Request Pipeline ---
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
@@ -206,54 +205,10 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
+// Custom Middleware Stack
 app.UseMiddleware<SignalRLoggingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-
-// Custom Middleware "Satpam Cek" (Hybrid IoT + Web)
-app.Use(async (context, next) =>
-{
-    var requestPath = context.Request.Path.Value?.ToLower();
-
-    // Bypass untuk Swagger, Root, dan Hubs (SignalR)
-    if (requestPath != null && (requestPath.Contains("/swagger") || requestPath == "/" || requestPath.Contains("/hubs/")))
-    {
-        await next();
-        return;
-    }
-
-    var origin = context.Request.Headers["Origin"].ToString();
-    var referer = context.Request.Headers["Referer"].ToString();
-
-    var corsOriginsEnv = Environment.GetEnvironmentVariable("CORS__Origins");
-    var allowedOrigins = corsOriginsEnv?
-                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(o => o.Trim().TrimEnd('/'))
-                        .ToList();
-
-    Console.WriteLine($"[👮 SATPAM CEK] Path: {requestPath} | Origin: '{origin}' | Referer: '{referer}'");
-
-    // LOGIKA: Jika tidak ada Origin/Referer (IoT/Mobile/Postman), IZINKAN lewat.
-    if (string.IsNullOrEmpty(origin) && string.IsNullOrEmpty(referer))
-    {
-        Console.WriteLine("[ℹ️ NON-BROWSER] Request tanpa identitas (IoT/App). Diizinkan lewat.");
-    }
-    // Jika ada Origin (Browser), CEK WHITELIST.
-    else if (!string.IsNullOrEmpty(origin) && allowedOrigins != null)
-    {
-        bool isAllowed = allowedOrigins.Any(o => string.Equals(o, origin, StringComparison.OrdinalIgnoreCase));
-        if (!isAllowed)
-        {
-            Console.WriteLine($"[⛔ DITOLAK] Origin '{origin}' tidak ada di daftar whitelist!");
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsync($"Akses Ditolak: Origin '{origin}' dilarang masuk.");
-            return;
-        }
-        Console.WriteLine("[✅ BROWSER VALID] Origin terdaftar. Silakan masuk.");
-    }
-
-    await next();
-});
-// --------------------------------------
+app.UseMiddleware<HybridSecurityMiddleware>(); // <-- Middleware Satpam Baru
 
 app.UseCors("AllowFrontend");
 

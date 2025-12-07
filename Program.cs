@@ -18,7 +18,7 @@ using Microsoft.IdentityModel.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load Environment & Configuration ---
+// Load Environment & Configuration
 Env.Load();
 builder.Configuration.AddEnvironmentVariables();
 
@@ -114,6 +114,11 @@ builder.Services.AddScoped<IKelasRepository, KelasRepository>();
 builder.Services.AddScoped<IRuanganRepository, RuanganRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
+// Setup Ping Service
+builder.Services.AddHttpClient(); // Wajib untuk melakukan request HTTP
+builder.Services.AddHostedService<DailyPingService>(); // Mendaftarkan service background
+// ---------------------------------
+
 // CORS Configuration
 var corsOrigins = Environment.GetEnvironmentVariable("CORS__Origins");
 Console.WriteLine($"[🔒 CORS CONFIG] Raw Value: '{corsOrigins}'");
@@ -170,7 +175,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 var token = authHeader.Substring("Bearer ".Length).Trim();
                 try
                 {
-                    // Debugging Only: Manual check untuk log di console
                     var handler = new JwtSecurityTokenHandler();
                     var principal = handler.ValidateToken(token, validationParams, out var validatedToken);
                     context.Principal = principal;
@@ -196,7 +200,7 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// HTTP Request Pipeline ---
+// HTTP Request Pipeline
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
@@ -208,7 +212,7 @@ app.UseSwaggerUI(c =>
 // Custom Middleware Stack
 app.UseMiddleware<SignalRLoggingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-app.UseMiddleware<HybridSecurityMiddleware>(); // <-- Middleware Satpam Baru
+app.UseMiddleware<HybridSecurityMiddleware>();
 
 app.UseCors("AllowFrontend");
 
@@ -219,3 +223,50 @@ app.MapControllers();
 app.MapHub<LogHub>("/hubs/log");
 
 await app.RunAsync();
+
+public class DailyPingService : BackgroundService
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<DailyPingService> _logger;
+    private readonly IConfiguration _configuration;
+
+    public DailyPingService(IHttpClientFactory httpClientFactory, ILogger<DailyPingService> logger, IConfiguration configuration)
+    {
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
+        _configuration = configuration;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("⏰ DailyPingService started. Will ping '/' every 24 hours.");
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
+
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+
+                var appUrl = "http://localhost:7860";
+                var urls = _configuration["ASPNETCORE_URLS"];
+                if (!string.IsNullOrEmpty(urls))
+                {
+                    appUrl = urls.Split(';')[0]; // Ambil URL pertama
+                    appUrl = appUrl.Replace("*", "localhost").Replace("+", "localhost"); // Fix wildcard binding
+                }
+
+                _logger.LogInformation($"[🚀 DAILY PING] Sending GET request to {appUrl}/ ...");
+
+                var response = await client.GetAsync($"{appUrl}/", stoppingToken);
+
+                _logger.LogInformation($"[✅ DAILY PING] Response: {response.StatusCode}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[❌ DAILY PING FAILED] Error: {ex.Message}");
+            }
+        }
+    }
+}

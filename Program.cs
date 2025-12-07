@@ -16,15 +16,17 @@ using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.IdentityModel.Logging;
 
-// Setup awal untuk debugging identity
-IdentityModelEventSource.ShowPII = true;
-JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
-
 var builder = WebApplication.CreateBuilder(args);
 
 // --- 1. Load Environment & Configuration ---
 Env.Load();
 builder.Configuration.AddEnvironmentVariables();
+
+if (builder.Environment.IsDevelopment())
+{
+    IdentityModelEventSource.ShowPII = true;
+}
+JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
 // Database Connection
 var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
@@ -33,9 +35,13 @@ var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__De
 builder.Services.AddDbContext<LabDbContext>(options =>
 {
     options.UseNpgsql(connectionString);
-    options.EnableSensitiveDataLogging();
+
+    if (builder.Environment.IsDevelopment())
+    {
+        options.EnableSensitiveDataLogging();
+    }
 });
-Console.WriteLine("✅ Database Provider: PostgreSQL (Fixed)");
+Console.WriteLine($"✅ Database Provider: PostgreSQL | Env: {builder.Environment.EnvironmentName}");
 
 // JWT Secret Setup
 var jwtSecretKey = Environment.GetEnvironmentVariable("JwtSettings__SecretKey")?.Trim();
@@ -99,8 +105,9 @@ builder.Services.AddScoped<IKelasService, KelasService>();
 builder.Services.AddScoped<IRuanganService, RuanganService>();
 builder.Services.AddScoped<ITapService, TapService>();
 builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddSingleton<IBroadcastService, BroadcastService>();
-builder.Services.AddHostedService(provider => provider.GetService<IBroadcastService>() as BroadcastService);
+
+// [ARSIKTETUR FIX] BroadcastService menggunakan Scoped agar bisa inject Repo & dipanggil TapService
+builder.Services.AddScoped<IBroadcastService, BroadcastService>();
 
 builder.Services.AddScoped<IKartuRepository, KartuRepository>();
 builder.Services.AddScoped<IAksesLogRepository, AksesLogRepository>();
@@ -164,6 +171,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 var token = authHeader.Substring("Bearer ".Length).Trim();
                 try
                 {
+                    // Debugging Only: Manual check untuk log di console
                     var handler = new JwtSecurityTokenHandler();
                     var principal = handler.ValidateToken(token, validationParams, out var validatedToken);
                     context.Principal = principal;
@@ -201,12 +209,13 @@ app.UseSwaggerUI(c =>
 app.UseMiddleware<SignalRLoggingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+// Custom Middleware "Satpam Cek" (Hybrid IoT + Web)
 app.Use(async (context, next) =>
 {
     var requestPath = context.Request.Path.Value?.ToLower();
 
-    // Bypass untuk Swagger dan Root
-    if (requestPath != null && (requestPath.Contains("/swagger") || requestPath == "/"))
+    // Bypass untuk Swagger, Root, dan Hubs (SignalR)
+    if (requestPath != null && (requestPath.Contains("/swagger") || requestPath == "/" || requestPath.Contains("/hubs/")))
     {
         await next();
         return;

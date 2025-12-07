@@ -8,6 +8,4 @@ public interface IDashboardService
     Task<ApiResponse<TodayStatsDto>> GetTodayStats();
     Task<ApiResponse<object>> GetTapStats();
     Task<ApiResponse<object>> GetTodayTapStats();
-
-    Task RefreshDashboardData();
 }

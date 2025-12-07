@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
+using testing.DTOs;
 using testing.Hubs;
+using testing.Repositories;
 
 namespace testing.Services
 {
@@ -8,18 +10,39 @@ namespace testing.Services
         Task SendToAllAsync(string method, object data);
         Task SendToGroupAsync(string groupName, string method, object data);
         Task SendToUserAsync(string userId, string method, object data);
+
+        // METHOD BARU: Untuk memicu update dashboard secara manual
+        Task PushDashboardStatsAsync();
     }
 
-    public class BroadcastService : IBroadcastService, IHostedService, IDisposable
+    public class BroadcastService : IBroadcastService
     {
         private readonly IHubContext<LogHub> _hubContext;
         private readonly ILogger<BroadcastService> _logger;
-        private Timer? _timer;
 
-        public BroadcastService(IHubContext<LogHub> hubContext, ILogger<BroadcastService> logger)
+        // Inject Repositories untuk menghitung statistik real-time
+        private readonly IAksesLogRepository _aksesLogRepository;
+        private readonly IKartuRepository _kartuRepository;
+        private readonly IKelasRepository _kelasRepository;
+        private readonly IRuanganRepository _ruanganRepository;
+        private readonly IUserRepository _userRepository;
+
+        public BroadcastService(
+            IHubContext<LogHub> hubContext,
+            ILogger<BroadcastService> logger,
+            IAksesLogRepository aksesLogRepository,
+            IKartuRepository kartuRepository,
+            IKelasRepository kelasRepository,
+            IRuanganRepository ruanganRepository,
+            IUserRepository userRepository)
         {
             _hubContext = hubContext;
             _logger = logger;
+            _aksesLogRepository = aksesLogRepository;
+            _kartuRepository = kartuRepository;
+            _kelasRepository = kelasRepository;
+            _ruanganRepository = ruanganRepository;
+            _userRepository = userRepository;
         }
 
         public async Task SendToAllAsync(string method, object data)
@@ -61,45 +84,45 @@ namespace testing.Services
             }
         }
 
-        public Task StartAsync(CancellationToken cancellationToken)
-        {
-            _logger.LogInformation("Broadcast Service started");
-
-            // Contoh: Update dashboard setiap 30 detik
-            _timer = new Timer(UpdateDashboardStats, null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
-
-            return Task.CompletedTask;
-        }
-
-        private async void UpdateDashboardStats(object? state)
+        // === LOGIKA BARU: EVENT DRIVEN ===
+        public async Task PushDashboardStatsAsync()
         {
             try
             {
-                var stats = new
+                // 1. Hitung statistik terbaru dari Database
+                var totalAkses = await _aksesLogRepository.CountAsync();
+
+                var semuaAkses = await _aksesLogRepository.GetAllAsync();
+                var aktifSekarang = semuaAkses.Count(a => a.TimestampKeluar == null);
+
+                var totalKartu = await _kartuRepository.CountAsync();
+                var totalKelas = await _kelasRepository.CountAsync();
+                var totalRuangan = await _ruanganRepository.CountAsync();
+                var totalUsers = await _userRepository.CountAsync();
+
+                var stats = new DashboardStatsDto
                 {
-                    Timestamp = DateTime.UtcNow,
-                    Message = "Dashboard stats updated",
-                    // Tambahkan data statistik nyata di sini
+                    TotalAkses = totalAkses,
+                    AktifSekarang = aktifSekarang,
+                    TotalKartu = totalKartu,
+                    TotalKelas = totalKelas,
+                    TotalRuangan = totalRuangan,
+                    TotalUsers = totalUsers
                 };
 
-                await SendToGroupAsync("dashboard", "DashboardStats", stats);
+                // 2. Kirim ke Client (Grup Dashboard)
+                await _hubContext.Clients.Group("dashboard").SendAsync("DashboardStatsUpdated", new
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Stats = stats
+                });
+
+                _logger.LogInformation("Dashboard stats pushed via SignalR (Event Driven)");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating dashboard stats");
+                _logger.LogError(ex, "Error pushing dashboard stats");
             }
-        }
-
-        public Task StopAsync(CancellationToken cancellationToken)
-        {
-            _logger.LogInformation("Broadcast Service stopped");
-            _timer?.Change(Timeout.Infinite, 0);
-            return Task.CompletedTask;
-        }
-
-        public void Dispose()
-        {
-            _timer?.Dispose();
         }
     }
 }

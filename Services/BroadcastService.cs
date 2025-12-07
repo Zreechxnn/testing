@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.SignalR;
 using testing.DTOs;
 using testing.Hubs;
 using testing.Repositories;
+using Microsoft.Extensions.DependencyInjection; // PENTING TAMBAH INI
 
 namespace testing.Services
 {
@@ -10,8 +11,6 @@ namespace testing.Services
         Task SendToAllAsync(string method, object data);
         Task SendToGroupAsync(string groupName, string method, object data);
         Task SendToUserAsync(string userId, string method, object data);
-
-        // METHOD BARU: Untuk memicu update dashboard secara manual
         Task PushDashboardStatsAsync();
     }
 
@@ -19,110 +18,84 @@ namespace testing.Services
     {
         private readonly IHubContext<LogHub> _hubContext;
         private readonly ILogger<BroadcastService> _logger;
-
-        // Inject Repositories untuk menghitung statistik real-time
-        private readonly IAksesLogRepository _aksesLogRepository;
-        private readonly IKartuRepository _kartuRepository;
-        private readonly IKelasRepository _kelasRepository;
-        private readonly IRuanganRepository _ruanganRepository;
-        private readonly IUserRepository _userRepository;
+        private readonly IServiceScopeFactory _scopeFactory; // GANTI REPO DENGAN INI
 
         public BroadcastService(
             IHubContext<LogHub> hubContext,
             ILogger<BroadcastService> logger,
-            IAksesLogRepository aksesLogRepository,
-            IKartuRepository kartuRepository,
-            IKelasRepository kelasRepository,
-            IRuanganRepository ruanganRepository,
-            IUserRepository userRepository)
+            IServiceScopeFactory scopeFactory) // Inject Factory
         {
             _hubContext = hubContext;
             _logger = logger;
-            _aksesLogRepository = aksesLogRepository;
-            _kartuRepository = kartuRepository;
-            _kelasRepository = kelasRepository;
-            _ruanganRepository = ruanganRepository;
-            _userRepository = userRepository;
+            _scopeFactory = scopeFactory;
         }
 
         public async Task SendToAllAsync(string method, object data)
         {
-            try
-            {
-                await _hubContext.Clients.All.SendAsync(method, data);
-                _logger.LogDebug($"Broadcast sent to all: {method}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error broadcasting to all: {method}");
-            }
+            await _hubContext.Clients.All.SendAsync(method, data);
         }
 
         public async Task SendToGroupAsync(string groupName, string method, object data)
         {
-            try
-            {
-                await _hubContext.Clients.Group(groupName).SendAsync(method, data);
-                _logger.LogDebug($"Broadcast sent to group {groupName}: {method}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error broadcasting to group {groupName}: {method}");
-            }
+            await _hubContext.Clients.Group(groupName).SendAsync(method, data);
         }
 
         public async Task SendToUserAsync(string userId, string method, object data)
         {
-            try
-            {
-                await _hubContext.Clients.User(userId).SendAsync(method, data);
-                _logger.LogDebug($"Broadcast sent to user {userId}: {method}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Error broadcasting to user {userId}: {method}");
-            }
+            await _hubContext.Clients.User(userId).SendAsync(method, data);
         }
 
-        // === LOGIKA BARU: EVENT DRIVEN ===
+        // === LOGIKA BARU: ISOLASI SCOPE ===
         public async Task PushDashboardStatsAsync()
         {
-            try
+            // Buat Scope BARU. Ini akan membuat DbContext BARU yang terpisah dari HTTP Request utama.
+            using (var scope = _scopeFactory.CreateScope())
             {
-                // 1. Hitung statistik terbaru dari Database
-                var totalAkses = await _aksesLogRepository.CountAsync();
-
-                var semuaAkses = await _aksesLogRepository.GetAllAsync();
-                var aktifSekarang = semuaAkses.Count(a => a.TimestampKeluar == null);
-
-                var totalKartu = await _kartuRepository.CountAsync();
-                var totalKelas = await _kelasRepository.CountAsync();
-                var totalRuangan = await _ruanganRepository.CountAsync();
-                var totalUsers = await _userRepository.CountAsync();
-
-                var stats = new DashboardStatsDto
+                try
                 {
-                    TotalAkses = totalAkses,
-                    AktifSekarang = aktifSekarang,
-                    TotalKartu = totalKartu,
-                    TotalKelas = totalKelas,
-                    TotalRuangan = totalRuangan,
-                    TotalUsers = totalUsers
-                };
+                    // Resolve Repository dari Scope buatan kita sendiri
+                    var aksesLogRepository = scope.ServiceProvider.GetRequiredService<IAksesLogRepository>();
+                    var kartuRepository = scope.ServiceProvider.GetRequiredService<IKartuRepository>();
+                    var kelasRepository = scope.ServiceProvider.GetRequiredService<IKelasRepository>();
+                    var ruanganRepository = scope.ServiceProvider.GetRequiredService<IRuanganRepository>();
+                    var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
 
-                // 2. Kirim ke Client (Grup Dashboard)
-                await _hubContext.Clients.Group("dashboard").SendAsync("DashboardStatsUpdated", new
+                    // 1. Hitung statistik (Aman, koneksi sendiri)
+                    var totalAkses = await aksesLogRepository.CountAsync();
+
+                    // Logic hitung aktif sekarang
+                    var semuaAkses = await aksesLogRepository.GetAllAsync(); // Atau optimize query di repo nanti
+                    var aktifSekarang = semuaAkses.Count(a => a.TimestampKeluar == null);
+
+                    var totalKartu = await kartuRepository.CountAsync();
+                    var totalKelas = await kelasRepository.CountAsync();
+                    var totalRuangan = await ruanganRepository.CountAsync();
+                    var totalUsers = await userRepository.CountAsync();
+
+                    var stats = new DashboardStatsDto
+                    {
+                        TotalAkses = totalAkses,
+                        AktifSekarang = aktifSekarang,
+                        TotalKartu = totalKartu,
+                        TotalKelas = totalKelas,
+                        TotalRuangan = totalRuangan,
+                        TotalUsers = totalUsers
+                    };
+
+                    // 2. Kirim ke Client
+                    await _hubContext.Clients.Group("dashboard").SendAsync("DashboardStatsUpdated", new
+                    {
+                        Timestamp = DateTime.UtcNow,
+                        Stats = stats
+                    });
+
+                    _logger.LogInformation("Dashboard stats pushed via SignalR (Isolated Scope)");
+                }
+                catch (Exception ex)
                 {
-                    Timestamp = DateTime.UtcNow,
-                    Stats = stats
-                });
-
-                _logger.LogInformation("Dashboard stats pushed via SignalR (Event Driven)");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error pushing dashboard stats");
-            }
+                    _logger.LogError(ex, "Error pushing dashboard stats");
+                }
+            } // Scope didispose, koneksi DB ditutup otomatis
         }
     }
 }

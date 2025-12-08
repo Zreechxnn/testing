@@ -33,3 +33,9 @@ public class RuanganStatsDto
     public int AksesHariIni { get; set; }
     public int AktifSekarang { get; set; }
 }
+
+public class MonthlyStatsDto
+{
+    public string Bulan { get; set; } = string.Empty;
+    public int Total { get; set; }
+}

@@ -218,4 +218,14 @@ public class AksesLogRepository : IAksesLogRepository
         return await _context.AksesLog
             .CountAsync(a => a.RuanganId == ruanganId && a.TimestampMasuk >= start && a.TimestampMasuk < end);
     }
+
+    public async Task<Dictionary<int, int>> GetMonthlyStatsAsync(int year)
+    {
+        // Grouping berdasarkan Bulan dan Hitung Jumlahnya
+        return await _context.AksesLog
+            .Where(a => a.TimestampMasuk.Year == year)
+            .GroupBy(a => a.TimestampMasuk.Month)
+            .Select(g => new { Month = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.Month, g => g.Count);
+    }
 }

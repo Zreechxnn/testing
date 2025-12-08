@@ -51,4 +51,14 @@ public class DashboardController : ControllerBase
         var response = await _tapService.GetStatsHariIni();
         return Ok(response);
     }
+
+    [HttpGet("monthly-stats")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<List<MonthlyStatsDto>>>> GetMonthlyStats([FromQuery] int? year)
+    {
+        // Jika tahun tidak dikirim, gunakan tahun sekarang
+        var targetYear = year ?? DateTime.Now.Year;
+        var response = await _aksesLogService.GetMonthlyStats(targetYear);
+        return Ok(response);
+    }
 }

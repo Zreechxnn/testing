@@ -33,4 +33,6 @@ public interface IAksesLogRepository
     Task<int> CountByKelasIdAsync(int kelasId);
     Task<int> CountActiveByKelasIdAsync(int kelasId);
     Task<int> CountByRuanganIdAndDateAsync(int ruanganId, DateTime date);
+
+    Task<Dictionary<int, int>> GetMonthlyStatsAsync(int year);
 }

@@ -332,4 +332,34 @@ public class AksesLogService : IAksesLogService
             return ApiResponse<TodayStatsDto>.ErrorResult("Gagal mengambil statistik hari ini");
         }
     }
+    public async Task<ApiResponse<List<MonthlyStatsDto>>> GetMonthlyStats(int year)
+    {
+        try
+        {
+            // 1. Ambil data mentah dari DB (hanya bulan yang ada akses)
+            var rawData = await _aksesLogRepository.GetMonthlyStatsAsync(year);
+
+            // 2. Siapkan array nama bulan (Indonesia)
+            string[] namaBulan = { "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des" };
+            var result = new List<MonthlyStatsDto>();
+
+            // 3. Loop 1-12 untuk memastikan format data lengkap
+            for (int i = 1; i <= 12; i++)
+            {
+                result.Add(new MonthlyStatsDto
+                {
+                    Bulan = namaBulan[i - 1],
+                    // Jika ada data di DB ambil nilainya, jika tidak set 0
+                    Total = rawData.ContainsKey(i) ? rawData[i] : 0
+                });
+            }
+
+            return ApiResponse<List<MonthlyStatsDto>>.SuccessResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting monthly stats");
+            return ApiResponse<List<MonthlyStatsDto>>.ErrorResult("Gagal mengambil statistik bulanan");
+        }
+    }
 }

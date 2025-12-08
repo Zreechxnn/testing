@@ -61,4 +61,12 @@ public class DashboardController : ControllerBase
         var response = await _aksesLogService.GetMonthlyStats(targetYear);
         return Ok(response);
     }
+
+    [HttpGet("last-30-days-stats")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<List<DailyStatsDto>>>> GetLast30DaysStats()
+    {
+        var response = await _aksesLogService.GetLast30DaysStats();
+        return Ok(response);
+    }
 }

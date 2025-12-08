@@ -362,4 +362,40 @@ public class AksesLogService : IAksesLogService
             return ApiResponse<List<MonthlyStatsDto>>.ErrorResult("Gagal mengambil statistik bulanan");
         }
     }
+
+    public async Task<ApiResponse<List<DailyStatsDto>>> GetLast30DaysStats()
+    {
+        try
+        {
+            // 1. Tentukan range tanggal (UTC)
+            var endDate = DateTime.UtcNow.Date;
+            var startDate = endDate.AddDays(-29); // 30 hari mundur (termasuk hari ini)
+
+            // 2. Ambil data mentah dari DB
+            var rawData = await _aksesLogRepository.GetDailyStatsAsync(startDate, endDate);
+
+            var result = new List<DailyStatsDto>();
+
+            // 3. Loop tanggal satu per satu untuk isi gap kosong dengan 0
+            for (var date = startDate; date <= endDate; date = date.AddDays(1))
+            {
+                result.Add(new DailyStatsDto
+                {
+                    // Format Tanggal Cantik (misal: "08 Dec")
+                    Tanggal = date.ToString("dd MMM"),
+
+                    // Ambil data jika ada, jika tidak 0
+                    Total = rawData.ContainsKey(date) ? rawData[date] : 0
+                });
+            }
+
+            return ApiResponse<List<DailyStatsDto>>.SuccessResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting last 30 days stats");
+            return ApiResponse<List<DailyStatsDto>>.ErrorResult("Gagal mengambil statistik 30 hari terakhir");
+        }
+    }
+
 }

@@ -228,4 +228,14 @@ public class AksesLogRepository : IAksesLogRepository
             .Select(g => new { Month = g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.Month, g => g.Count);
     }
+
+    public async Task<Dictionary<DateTime, int>> GetDailyStatsAsync(DateTime start, DateTime end)
+    {
+        // Grouping berdasarkan Tanggal (Date Only)
+        return await _context.AksesLog
+            .Where(a => a.TimestampMasuk >= start && a.TimestampMasuk <= end)
+            .GroupBy(a => a.TimestampMasuk.Date)
+            .Select(g => new { Date = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.Date, g => g.Count);
+    }
 }

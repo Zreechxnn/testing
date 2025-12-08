@@ -18,4 +18,5 @@ public interface IAksesLogService
     Task<ApiResponse<DashboardStatsDto>> GetDashboardStats();
     Task<ApiResponse<TodayStatsDto>> GetTodayStats();
     Task<ApiResponse<List<MonthlyStatsDto>>> GetMonthlyStats(int year);
+    Task<ApiResponse<List<DailyStatsDto>>> GetLast30DaysStats();
 }

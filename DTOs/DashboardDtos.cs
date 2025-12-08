@@ -39,3 +39,9 @@ public class MonthlyStatsDto
     public string Bulan { get; set; } = string.Empty;
     public int Total { get; set; }
 }
+
+public class DailyStatsDto
+{
+    public string Tanggal { get; set; } = string.Empty; // Contoh: "08 Dec"
+    public int Total { get; set; }
+}

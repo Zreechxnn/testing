@@ -83,11 +83,7 @@ namespace testing.Services
                     };
 
                     // 2. Kirim ke Client
-                    await _hubContext.Clients.Group("dashboard").SendAsync("DashboardStatsUpdated", new
-                    {
-                        Timestamp = DateTime.UtcNow,
-                        Stats = stats
-                    });
+                    await _hubContext.Clients.Group("dashboard").SendAsync("ReceiveDashboardStats", stats);
 
                     _logger.LogInformation("Dashboard stats pushed via SignalR (Isolated Scope)");
                 }

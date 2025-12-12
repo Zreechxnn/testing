@@ -148,9 +148,12 @@ public class AuthService : IAuthService
 
             var claims = new[]
             {
-                new Claim("id", user.Id.ToString()),
-                new Claim("name", user.Username),
-                new Claim("role", user.Role),
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+
+                new Claim(ClaimTypes.Name, user.Username),
+
+                new Claim(ClaimTypes.Role, user.Role),
+
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
@@ -174,6 +177,36 @@ public class AuthService : IAuthService
         {
             _logger.LogError(ex, "Error generating JWT token for user {Username}", user.Username);
             throw new Exception($"Gagal generate token: {ex.Message}");
+        }
+    }
+
+    public async Task<ApiResponse<bool>> ChangePassword(int userId, ChangePasswordRequest request)
+    {
+        try
+        {
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null)
+            {
+                return ApiResponse<bool>.ErrorResult("User tidak ditemukan");
+            }
+
+            if (!VerifyPassword(request.OldPassword, user.PasswordHash))
+            {
+                return ApiResponse<bool>.ErrorResult("Password lama salah");
+            }
+
+            user.PasswordHash = HashPassword(request.NewPassword);
+
+            _userRepository.Update(user);
+            await _userRepository.SaveAsync();
+
+            _logger.LogInformation("User {Username} berhasil mengganti password", user.Username);
+            return ApiResponse<bool>.SuccessResult(true, "Password berhasil diubah");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Gagal mengganti password untuk userId: {UserId}", userId);
+            return ApiResponse<bool>.ErrorResult("Terjadi kesalahan saat mengganti password");
         }
     }
 }

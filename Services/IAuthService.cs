@@ -7,4 +7,5 @@ public interface IAuthService
     Task<ApiResponse<UserLoginResponse>> Login(UserLoginRequest request);
     Task<ApiResponse<UserDto>> GetProfile(int userId);
     Task<ApiResponse<List<object>>> GetRoles();
+    Task<ApiResponse<bool>> ChangePassword(int userId, ChangePasswordRequest request);
 }

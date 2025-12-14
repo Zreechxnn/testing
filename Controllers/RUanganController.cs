@@ -35,7 +35,7 @@ public class RuanganController : ControllerBase
     }
 
     [HttpPost]
-    // [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin")]
     public async Task<ActionResult<ApiResponse<RuanganDto>>> Create([FromBody] RuanganCreateRequest request)
     {
         var response = await _ruanganService.CreateRuangan(request);
@@ -45,7 +45,7 @@ public class RuanganController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    // [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin")]
     public async Task<ActionResult<ApiResponse<RuanganDto>>> Update(int id, [FromBody] RuanganUpdateRequest request)
     {
         var response = await _ruanganService.UpdateRuangan(id, request);
@@ -55,7 +55,7 @@ public class RuanganController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    // [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin")]
     public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
     {
         var response = await _ruanganService.DeleteRuangan(id);

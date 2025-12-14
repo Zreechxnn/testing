@@ -19,7 +19,7 @@ public class KartuController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator")]
     public async Task<ActionResult<ApiResponse<List<KartuDto>>>> GetAll()
     {
         var response = await _kartuService.GetAllKartu();
@@ -35,7 +35,7 @@ public class KartuController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator")]
     public async Task<ActionResult<ApiResponse<KartuDto>>> GetById(int id)
     {
         var response = await _kartuService.GetKartuById(id);
@@ -81,4 +81,3 @@ public class KartuController : ControllerBase
         return Ok(response);
     }
 }
-// a

@@ -19,6 +19,7 @@ public class KelasController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Roles = "admin,guru")]
     public async Task<ActionResult<ApiResponse<List<KelasDto>>>> GetAll()
     {
         var response = await _kelasService.GetAllKelas();
@@ -26,6 +27,7 @@ public class KelasController : ControllerBase
     }
 
     [HttpGet("{id}")]
+    [Authorize(Roles = "admin,guru")]
     public async Task<ActionResult<ApiResponse<KelasDto>>> GetById(int id)
     {
         var response = await _kelasService.GetKelasById(id);
@@ -35,7 +37,7 @@ public class KelasController : ControllerBase
     }
 
     [HttpPost]
-    // [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,guru")]
     public async Task<ActionResult<ApiResponse<KelasDto>>> Create([FromBody] KelasCreateRequest request)
     {
         var response = await _kelasService.CreateKelas(request);
@@ -45,7 +47,7 @@ public class KelasController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    // [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,guru")]
     public async Task<ActionResult<ApiResponse<KelasDto>>> Update(int id, [FromBody] KelasUpdateRequest request)
     {
         var response = await _kelasService.UpdateKelas(id, request);
@@ -55,7 +57,7 @@ public class KelasController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    // [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,guru")]
     public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
     {
         var response = await _kelasService.DeleteKelas(id);

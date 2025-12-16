@@ -219,7 +219,15 @@ app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseWebSockets();
+// --- [BARU] START: WebSocket Handler untuk Hardware ---
+// Kita tambahkan ini agar ESP8266 bisa connect tanpa masalah Origin
+var wsOptions = new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromMinutes(2)
+};
+wsOptions.AllowedOrigins.Add("*"); // Penting: Izinkan ESP tanpa header Origin browser
+app.UseWebSockets(wsOptions);
+// --- [BARU] END ---
 
 app.MapControllers();
 app.MapHub<LogHub>("/hubs/log");

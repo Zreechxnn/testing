@@ -18,8 +18,13 @@ namespace testing.Middleware
         {
             var requestPath = context.Request.Path.Value?.ToLower();
 
-            // 1. Bypass untuk Swagger, Root, dan Hubs (SignalR)
-            if (requestPath != null && (requestPath.Contains("/swagger") || requestPath == "/" || requestPath.Contains("/hubs/")))
+            // 1. Bypass untuk Swagger, Root, Hubs (SignalR), DAN WEBSOCKET HARDWARE (/ws/)
+            if (requestPath != null && (
+                requestPath.Contains("/swagger") ||
+                requestPath == "/" ||
+                requestPath.Contains("/hubs/") ||
+                requestPath.Contains("/ws/") // <-- INI YANG BARU
+               ))
             {
                 await _next(context);
                 return;
@@ -35,12 +40,12 @@ namespace testing.Middleware
                                 .Select(o => o.Trim().TrimEnd('/'))
                                 .ToList();
 
-            _logger.LogInformation($"[👮 SATPAM CEK] Path: {requestPath} | Origin: '{origin}' | Referer: '{referer}'");
+            _logger.LogInformation($"[SATPAM] Path: {requestPath} | Origin: '{origin}'");
 
-            // 2. LOGIKA: Jika tidak ada Origin/Referer (IoT/Mobile/Postman), IZINKAN lewat.
+            // 2. LOGIKA: Jika tidak ada Origin/Referer (IoT/App), IZINKAN lewat.
             if (string.IsNullOrEmpty(origin) && string.IsNullOrEmpty(referer))
             {
-                _logger.LogInformation("[ℹ️ NON-BROWSER] Request tanpa identitas (IoT/App). Diizinkan lewat.");
+                _logger.LogInformation("[NON-BROWSER] Request tanpa identitas. Diizinkan.");
             }
             // 3. Jika ada Origin (Browser), CEK WHITELIST.
             else if (!string.IsNullOrEmpty(origin) && allowedOrigins != null)
@@ -48,12 +53,12 @@ namespace testing.Middleware
                 bool isAllowed = allowedOrigins.Any(o => string.Equals(o, origin, StringComparison.OrdinalIgnoreCase));
                 if (!isAllowed)
                 {
-                    _logger.LogWarning($"[⛔ DITOLAK] Origin '{origin}' tidak ada di daftar whitelist!");
+                    _logger.LogWarning($"[DITOLAK] Origin '{origin}' tidak terdaftar!");
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    await context.Response.WriteAsync($"Akses Ditolak: Origin '{origin}' dilarang masuk.");
-                    return; // Stop pipeline di sini
+                    await context.Response.WriteAsync($"Akses Ditolak.");
+                    return;
                 }
-                _logger.LogInformation("[✅ BROWSER VALID] Origin terdaftar. Silakan masuk.");
+                _logger.LogInformation("[BROWSER VALID] Origin terdaftar.");
             }
 
             await _next(context);

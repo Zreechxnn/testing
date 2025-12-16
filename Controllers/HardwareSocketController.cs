@@ -3,7 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 
-namespace NamaProjectKamu.Controllers // Sesuaikan namespace
+namespace testing.Controllers // Pastikan namespace sesuai project kamu
 {
     [ApiController]
     public class HardwareSocketController : ControllerBase
@@ -31,33 +31,32 @@ namespace NamaProjectKamu.Controllers // Sesuaikan namespace
             {
                 while (webSocket.State == WebSocketState.Open)
                 {
-                    var result = await webSocket.ReceiveAsync(
-                        new ArraySegment<byte>(buffer), CancellationToken.None);
+                    var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
 
                     if (result.MessageType == WebSocketMessageType.Text)
                     {
                         var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                        Console.WriteLine($"[Hardware] Raw Data: {message}");
+                        Console.WriteLine($"[HARDWARE] Raw: {message}");
 
                         try
                         {
-                            // 1. Deserialize JSON dari ESP
+                            // Ubah ke Object
                             var sensorData = JsonSerializer.Deserialize<SensorPayload>(message, jsonOptions);
 
                             if (sensorData != null)
                             {
-                                // LOGIC UTAMA DISINI
-                                // Contoh: Validasi UID ke Database
-                                string replyText = "DENIED";
+                                // LOGIC VALIDASI SEMENTARA
+                                string reply = "DENIED";
 
-                                if (sensorData.Uid == "E2 45 88 12") // Contoh Hardcode
+                                // Contoh Logic Dummy (Ganti dengan Service Database nanti)
+                                if (sensorData.Uid != null)
                                 {
-                                    replyText = "OPEN_DOOR";
-                                    Console.WriteLine($"Akses Diterima untuk: {sensorData.Uid}");
+                                    reply = "OPEN_DOOR";
+                                    Console.WriteLine($"Akses Diterima: {sensorData.Uid}");
                                 }
 
-                                // 2. Kirim Balasan ke ESP
-                                var responseBytes = Encoding.UTF8.GetBytes(replyText);
+                                // Balas ke ESP
+                                var responseBytes = Encoding.UTF8.GetBytes(reply);
                                 await webSocket.SendAsync(
                                     new ArraySegment<byte>(responseBytes),
                                     WebSocketMessageType.Text,
@@ -65,31 +64,28 @@ namespace NamaProjectKamu.Controllers // Sesuaikan namespace
                                     CancellationToken.None);
                             }
                         }
-                        catch (JsonException)
+                        catch (Exception e)
                         {
-                            Console.WriteLine("[Hardware] Data bukan JSON valid.");
+                            Console.WriteLine($"[HARDWARE] JSON Error: {e.Message}");
                         }
                     }
                     else if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        await webSocket.CloseAsync(
-                            result.CloseStatus.Value,
-                            result.CloseStatusDescription,
-                            CancellationToken.None);
+                        await webSocket.CloseAsync(result.CloseStatus.Value, result.CloseStatusDescription, CancellationToken.None);
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Hardware] Error: {ex.Message}");
+                Console.WriteLine($"[HARDWARE] Err: {ex.Message}");
             }
         }
     }
 
-    // Model Data (Letakkan di file terpisah jika mau)
     public class SensorPayload
     {
         public string Uid { get; set; }
         public string Device { get; set; }
+        public string Timestamp { get; set; }
     }
 }

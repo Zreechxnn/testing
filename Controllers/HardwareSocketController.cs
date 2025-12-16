@@ -1,59 +1,95 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 
-[ApiController]
-public class HardwareSocketController : ControllerBase
+namespace NamaProjectKamu.Controllers // Sesuaikan namespace
 {
-    [Route("/ws/hardware")]
-    public async Task Get()
+    [ApiController]
+    public class HardwareSocketController : ControllerBase
     {
-        if (HttpContext.WebSockets.IsWebSocketRequest)
+        [Route("/ws/hardware")]
+        public async Task Get()
         {
-            using var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
-            await HandleHardwareConnection(webSocket);
+            if (HttpContext.WebSockets.IsWebSocketRequest)
+            {
+                using var webSocket = await HttpContext.WebSockets.AcceptWebSocketAsync();
+                await HandleHardwareConnection(webSocket);
+            }
+            else
+            {
+                HttpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            }
         }
-        else
+
+        private async Task HandleHardwareConnection(WebSocket webSocket)
         {
-            HttpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            var buffer = new byte[1024 * 4];
+            var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+            try
+            {
+                while (webSocket.State == WebSocketState.Open)
+                {
+                    var result = await webSocket.ReceiveAsync(
+                        new ArraySegment<byte>(buffer), CancellationToken.None);
+
+                    if (result.MessageType == WebSocketMessageType.Text)
+                    {
+                        var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                        Console.WriteLine($"[Hardware] Raw Data: {message}");
+
+                        try
+                        {
+                            // 1. Deserialize JSON dari ESP
+                            var sensorData = JsonSerializer.Deserialize<SensorPayload>(message, jsonOptions);
+
+                            if (sensorData != null)
+                            {
+                                // LOGIC UTAMA DISINI
+                                // Contoh: Validasi UID ke Database
+                                string replyText = "DENIED";
+
+                                if (sensorData.Uid == "E2 45 88 12") // Contoh Hardcode
+                                {
+                                    replyText = "OPEN_DOOR";
+                                    Console.WriteLine($"Akses Diterima untuk: {sensorData.Uid}");
+                                }
+
+                                // 2. Kirim Balasan ke ESP
+                                var responseBytes = Encoding.UTF8.GetBytes(replyText);
+                                await webSocket.SendAsync(
+                                    new ArraySegment<byte>(responseBytes),
+                                    WebSocketMessageType.Text,
+                                    true,
+                                    CancellationToken.None);
+                            }
+                        }
+                        catch (JsonException)
+                        {
+                            Console.WriteLine("[Hardware] Data bukan JSON valid.");
+                        }
+                    }
+                    else if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        await webSocket.CloseAsync(
+                            result.CloseStatus.Value,
+                            result.CloseStatusDescription,
+                            CancellationToken.None);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Hardware] Error: {ex.Message}");
+            }
         }
     }
 
-    private async Task HandleHardwareConnection(WebSocket webSocket)
+    // Model Data (Letakkan di file terpisah jika mau)
+    public class SensorPayload
     {
-        var buffer = new byte[1024 * 4];
-
-        // Loop ini menjaga koneksi tetap hidup sampai alat putus koneksi
-        while (webSocket.State == WebSocketState.Open)
-        {
-            var result = await webSocket.ReceiveAsync(
-                new ArraySegment<byte>(buffer), CancellationToken.None);
-
-            if (result.MessageType == WebSocketMessageType.Text)
-            {
-                // Proses data dari ESP di sini
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                Console.WriteLine($"Data dari Alat: {message}");
-
-                // Di sini kamu bisa panggil _hubContext untuk update Frontend
-                // await _hubContext.Clients.All.SendAsync("UpdateData", message);
-
-                // Kirim balasan ke ESP jika perlu (ACK)
-                var response = Encoding.UTF8.GetBytes("OK");
-                await webSocket.SendAsync(
-                    new ArraySegment<byte>(response, 0, response.Length),
-                    result.MessageType,
-                    result.EndOfMessage,
-                    CancellationToken.None);
-            }
-            else if (result.MessageType == WebSocketMessageType.Close)
-            {
-                await webSocket.CloseAsync(
-                    result.CloseStatus.Value,
-                    result.CloseStatusDescription,
-                    CancellationToken.None);
-            }
-        }
+        public string Uid { get; set; }
+        public string Device { get; set; }
     }
 }

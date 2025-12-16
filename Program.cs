@@ -219,6 +219,8 @@ app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.UseWebSockets();
+
 app.MapControllers();
 app.MapHub<LogHub>("/hubs/log");
 

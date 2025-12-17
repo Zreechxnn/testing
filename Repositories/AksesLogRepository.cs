@@ -238,4 +238,17 @@ public class AksesLogRepository : IAksesLogRepository
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.Date, g => g.Count);
     }
+
+    public async Task<bool> DeleteAllAsync()
+    {
+        var allLogs = await _context.AksesLog.ToListAsync();
+
+        if (!allLogs.Any())
+        {
+            return false;
+        }
+
+        _context.AksesLog.RemoveRange(allLogs);
+        return await _context.SaveChangesAsync() > 0;
+    }
 }

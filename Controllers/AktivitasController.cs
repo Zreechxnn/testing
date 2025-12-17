@@ -96,4 +96,12 @@ public class AktivitasController : ControllerBase
         var response = await _tapService.GetLogs(ruanganId);
         return Ok(response);
     }
+
+    [HttpDelete("all")]
+    [Authorize(Roles = "admin")]
+    public async Task<ActionResult<ApiResponse<object>>> DeleteAll()
+    {
+        var response = await _aksesLogService.DeleteAllAksesLog();
+        return Ok(response);
+    }
 }

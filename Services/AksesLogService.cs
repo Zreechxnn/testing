@@ -398,4 +398,46 @@ public class AksesLogService : IAksesLogService
         }
     }
 
+    public async Task<ApiResponse<object>> DeleteAllAksesLog()
+    {
+        try
+        {
+            var deleted = await _aksesLogRepository.DeleteAllAsync();
+
+            if (!deleted)
+            {
+                return ApiResponse<object>.SuccessResult(null, "Data aktivitas sudah kosong");
+            }
+
+            _logger.LogInformation("All AksesLog deleted by Admin");
+
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("AllAksesLogsDeleted", new
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Message = "Semua riwayat aktivitas telah dihapus"
+                });
+
+                await _hubContext.Clients.Group("admin").SendAsync("SystemNotification", new
+                {
+                    Type = "ALL_LOGS_DELETED",
+                    Data = new { DeletedAt = DateTime.UtcNow },
+                    Message = "Seorang admin telah menghapus seluruh riwayat aktivitas"
+                });
+            }
+            catch (Exception hubEx)
+            {
+                _logger.LogWarning(hubEx, "Gagal mengirim notifikasi SignalR delete all");
+            }
+
+            return ApiResponse<object>.SuccessResult(null, "Semua aktivitas berhasil dihapus");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting all akses logs");
+            return ApiResponse<object>.ErrorResult("Gagal menghapus semua aktivitas");
+        }
+    }
+
 }

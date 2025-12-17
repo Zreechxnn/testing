@@ -19,4 +19,6 @@ public interface IAksesLogService
     Task<ApiResponse<TodayStatsDto>> GetTodayStats();
     Task<ApiResponse<List<MonthlyStatsDto>>> GetMonthlyStats(int year);
     Task<ApiResponse<List<DailyStatsDto>>> GetLast30DaysStats();
+
+    Task<ApiResponse<object>> DeleteAllAksesLog();
 }

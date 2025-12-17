@@ -91,4 +91,23 @@ public class AuthController : ControllerBase
 
         return 0;
     }
+
+    [HttpPut("profile")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<UserDto>>> UpdateProfile([FromBody] UpdateProfileRequest request)
+    {
+        var userId = GetUserIdFromToken();
+
+        if (userId == 0)
+        {
+            return Unauthorized(ApiResponse<UserDto>.ErrorResult("Token tidak valid."));
+        }
+
+        var response = await _authService.UpdateProfile(userId, request);
+
+        if (!response.Success)
+            return BadRequest(response);
+
+        return Ok(response);
+    }
 }

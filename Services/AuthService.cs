@@ -209,4 +209,39 @@ public class AuthService : IAuthService
             return ApiResponse<bool>.ErrorResult("Terjadi kesalahan saat mengganti password");
         }
     }
+    public async Task<ApiResponse<UserDto>> UpdateProfile(int userId, UpdateProfileRequest request)
+    {
+        try
+        {
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null)
+            {
+                return ApiResponse<UserDto>.ErrorResult("User tidak ditemukan");
+            }
+
+            // Cek jika username diganti dan sudah dipakai orang lain
+            if (request.Username != user.Username)
+            {
+                var existingUser = await _userRepository.GetByUsernameAsync(request.Username);
+                if (existingUser != null)
+                {
+                    return ApiResponse<UserDto>.ErrorResult("Username sudah digunakan");
+                }
+            }
+
+            // Update data
+            user.Username = request.Username;
+
+            _userRepository.Update(user);
+            await _userRepository.SaveAsync();
+
+            var userDto = _mapper.Map<UserDto>(user);
+            return ApiResponse<UserDto>.SuccessResult(userDto, "Profil berhasil diperbarui");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Gagal update profile userId: {UserId}", userId);
+            return ApiResponse<UserDto>.ErrorResult("Terjadi kesalahan saat memperbarui profil");
+        }
+    }
 }

@@ -251,4 +251,9 @@ public class KelasService : IKelasService
             _ => "diubah"
         };
     }
+    public async Task<ApiResponse<List<KelasDto>>> GetKelasByPeriode(int periodeId)
+    {
+        var data = await _kelasRepository.GetByPeriodeAsync(periodeId);
+        return ApiResponse<List<KelasDto>>.SuccessResult(_mapper.Map<List<KelasDto>>(data));
+    }
 }

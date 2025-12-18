@@ -12,4 +12,5 @@ public interface IKelasRepository
     void Remove(Kelas kelas);
     Task<int> CountAsync();
     Task<bool> SaveAsync();
+    Task<IEnumerable<Kelas>> GetByPeriodeAsync(int periodeId);
 }

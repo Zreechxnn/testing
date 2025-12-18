@@ -10,11 +10,5 @@ public interface IKelasService
     Task<ApiResponse<KelasDto>> UpdateKelas(int id, KelasUpdateRequest request);
     Task<ApiResponse<object>> DeleteKelas(int id);
     Task<ApiResponse<KelasStatsDto>> GetKelasStats(int id);
+    Task<ApiResponse<List<KelasDto>>> GetKelasByPeriode(int periodeId);
 }
-
-// public class KelasStatsDto
-// {
-//     public string Kelas { get; set; } = string.Empty;
-//     public int TotalAkses { get; set; }
-//     public int AktifSekarang { get; set; }
-// }

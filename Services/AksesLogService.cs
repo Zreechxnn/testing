@@ -440,4 +440,16 @@ public class AksesLogService : IAksesLogService
         }
     }
 
+    public async Task<ApiResponse<AksesLogDto>> UpdateKeterangan(int id, AksesLogUpdateRequest request)
+    {
+        var log = await _aksesLogRepository.GetByIdAsync(id);
+        if (log == null) return ApiResponse<AksesLogDto>.ErrorResult("Log tidak ditemukan");
+
+        log.Keterangan = request.Keterangan;
+        _aksesLogRepository.Update(log);
+        await _aksesLogRepository.SaveAsync();
+
+        return ApiResponse<AksesLogDto>.SuccessResult(_mapper.Map<AksesLogDto>(log), "Catatan berhasil ditambahkan");
+    }
+
 }

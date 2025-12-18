@@ -58,4 +58,12 @@ public class KelasRepository : IKelasRepository
     {
         return await _context.SaveChangesAsync() > 0;
     }
+    public async Task<IEnumerable<Kelas>> GetByPeriodeAsync(int periodeId)
+    {
+        return await _context.Kelas
+            .Include(k => k.Periode)
+            .Where(k => k.PeriodeId == periodeId)
+            .OrderBy(k => k.Nama)
+            .ToListAsync();
+    }
 }

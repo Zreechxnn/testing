@@ -104,4 +104,12 @@ public class AktivitasController : ControllerBase
         var response = await _aksesLogService.DeleteAllAksesLog();
         return Ok(response);
     }
+
+    [HttpPut("{id}/catatan")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> UpdateCatatan(int id, [FromBody] AksesLogUpdateRequest request)
+    {
+        var response = await _aksesLogService.UpdateKeterangan(id, request);
+        return Ok(response);
+    }
 }

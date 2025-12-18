@@ -74,4 +74,12 @@ public class KelasController : ControllerBase
             return NotFound(response);
         return Ok(response);
     }
+
+    [HttpGet("periode/{periodeId}")]
+    [Authorize(Roles = "admin,guru")]
+    public async Task<IActionResult> GetByPeriode(int periodeId)
+    {
+        var response = await _kelasService.GetKelasByPeriode(periodeId);
+        return Ok(response);
+    }
 }

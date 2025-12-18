@@ -112,8 +112,6 @@ public class UserRepository : IUserRepository
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Kartu != null && u.Kartu.Any(k => k.Uid == kartuUid));
     }
-
-    // Method untuk mendapatkan user yang tidak memiliki kartu
     public async Task<IEnumerable<User>> GetUsersWithoutKartuAsync()
     {
         return await _context.Users

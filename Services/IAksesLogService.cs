@@ -21,4 +21,5 @@ public interface IAksesLogService
     Task<ApiResponse<List<DailyStatsDto>>> GetLast30DaysStats();
 
     Task<ApiResponse<object>> DeleteAllAksesLog();
+    Task<ApiResponse<AksesLogDto>> UpdateKeterangan(int id, AksesLogUpdateRequest request);
 }

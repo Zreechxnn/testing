@@ -289,8 +289,7 @@ public class UserService : IUserService
             var tokenHandler = new JwtSecurityTokenHandler();
             var key = Encoding.UTF8.GetBytes(_jwtSecretKey);
 
-            // [PENTING] Gunakan nama claim standar string literal ("id", "role") 
-            // agar match dengan konfigurasi Program.cs
+            // string literal ("id", "role") 
             var claims = new[]
             {
                 new Claim("id", user.Id.ToString()),

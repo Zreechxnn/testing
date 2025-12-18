@@ -11,5 +11,6 @@ namespace testing.Models
 
         public virtual Kartu? Kartu { get; set; }
         public virtual Ruangan? Ruangan { get; set; }
+        public string? Keterangan { get; set; }
     }
 }

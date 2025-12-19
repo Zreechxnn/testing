@@ -35,7 +35,7 @@ public class MappingProfile : Profile
         CreateMap<KelasUpdateRequest, Kelas>();
 
         CreateMap<Kelas, KelasDto>()
-    .ForMember(d => d.PeriodeNama, opt => opt.MapFrom(s => s.Periode != null ? s.Periode.Nama : null));
+    .ForMember(dest => dest.PeriodeNama, opt => opt.MapFrom(src => src.Periode.Nama));
         CreateMap<AksesLog, AksesLogDto>();
 
         // Ruangan mappings

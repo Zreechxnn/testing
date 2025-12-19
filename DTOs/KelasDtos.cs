@@ -10,6 +10,7 @@ public class KelasCreateRequest
 public class KelasUpdateRequest
 {
     public required string Nama { get; set; }
+    public int PeriodeId { get; set; }
 }
 
 public class KelasDto

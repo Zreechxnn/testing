@@ -16,6 +16,7 @@ public class KelasRepository : IKelasRepository
     public async Task<Kelas?> GetByIdAsync(int id)
     {
         return await _context.Kelas
+            .Include(k => k.Periode)
             .AsNoTracking()
             .FirstOrDefaultAsync(k => k.Id == id);
     }
@@ -23,6 +24,7 @@ public class KelasRepository : IKelasRepository
     public async Task<IEnumerable<Kelas>> GetAllAsync()
     {
         return await _context.Kelas
+            .Include(k => k.Periode)
             .AsNoTracking()
             .OrderBy(k => k.Nama)
             .ToListAsync();

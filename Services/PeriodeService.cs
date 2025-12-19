@@ -5,21 +5,17 @@ using testing.Repositories;
 
 namespace testing.Services;
 
-public interface IPeriodeService
-{
-    Task<ApiResponse<List<PeriodeDto>>> GetAll();
-    Task<ApiResponse<PeriodeDto>> Create(PeriodeCreateRequest request);
-}
-
 public class PeriodeService : IPeriodeService
 {
     private readonly IPeriodeRepository _repo;
     private readonly IMapper _mapper;
+    private readonly ILogger<PeriodeService> _logger;
 
     public PeriodeService(IPeriodeRepository repo, IMapper mapper)
     {
         _repo = repo;
         _mapper = mapper;
+        _logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<PeriodeService>();
     }
 
     public async Task<ApiResponse<List<PeriodeDto>>> GetAll()
@@ -34,5 +30,32 @@ public class PeriodeService : IPeriodeService
         await _repo.AddAsync(model);
         await _repo.SaveAsync();
         return ApiResponse<PeriodeDto>.SuccessResult(_mapper.Map<PeriodeDto>(model));
+    }
+
+    public async Task<ApiResponse<object>> SetActive(int id)
+    {
+        try
+        {
+            var periode = await _repo.GetByIdAsync(id);
+            if (periode == null) return ApiResponse<object>.ErrorResult("Periode tidak ditemukan");
+
+            // 1. Ambil semua periode
+            var allPeriode = await _repo.GetAllAsync();
+
+            // 2. Set semua periode jadi tidak aktif
+            foreach (var p in allPeriode)
+            {
+                p.IsAktif = (p.Id == id); // Hanya ID terpilih yang true
+                _repo.Update(p);
+            }
+
+            await _repo.SaveAsync();
+            return ApiResponse<object>.SuccessResult(null, $"Periode {periode.Nama} sekarang aktif");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Gagal mengaktifkan periode");
+            return ApiResponse<object>.ErrorResult("Gagal mengaktifkan periode");
+        }
     }
 }

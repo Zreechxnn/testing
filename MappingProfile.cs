@@ -29,13 +29,18 @@ public class MappingProfile : Profile
         CreateMap<KartuCreateDto, Kartu>();
         CreateMap<KartuUpdateDto, Kartu>();
 
+
+        CreateMap<Periode, PeriodeDto>();
+        CreateMap<PeriodeCreateRequest, Periode>();
+        CreateMap<PeriodeUpdateRequest, Periode>();
+
         // Kelas mappings
         CreateMap<Kelas, KelasDto>();
         CreateMap<KelasCreateRequest, Kelas>();
         CreateMap<KelasUpdateRequest, Kelas>();
 
         CreateMap<Kelas, KelasDto>()
-    .ForMember(dest => dest.PeriodeNama, opt => opt.MapFrom(src => src.Periode.Nama));
+        .ForMember(dest => dest.PeriodeNama, opt => opt.MapFrom(src => src.Periode.Nama));
         CreateMap<AksesLog, AksesLogDto>();
 
         // Ruangan mappings

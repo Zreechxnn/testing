@@ -12,13 +12,34 @@ namespace testing.Data
         public DbSet<User> Users => Set<User>();
         public DbSet<Ruangan> Ruangan => Set<Ruangan>();
         public DbSet<AksesLog> AksesLog => Set<AksesLog>();
+        // 1. TAMBAHKAN DBSET PERIODE
+        public DbSet<Periode> Periode => Set<Periode>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            // Konfigurasi Kartu - SESUAIKAN DENGAN MODEL
+            // Konfigurasi Periode
+            modelBuilder.Entity<Periode>(entity =>
+            {
+                entity.HasKey(p => p.Id);
+                entity.Property(p => p.Nama).IsRequired();
+                entity.Property(p => p.IsAktif).HasDefaultValue(false);
+            });
+
+            // Konfigurasi Kelas
+            modelBuilder.Entity<Kelas>(entity =>
+            {
+                entity.HasKey(k => k.Id);
+
+                // 2. TAMBAHKAN RELASI KELAS -> PERIODE
+                entity.HasOne(k => k.Periode)
+                    .WithMany(p => p.Kelas)
+                    .HasForeignKey(k => k.PeriodeId)
+                    .OnDelete(DeleteBehavior.Restrict); // Mencegah hapus periode jika masih ada kelas
+            });
+
+            // Konfigurasi Kartu
             modelBuilder.Entity<Kartu>(entity =>
             {
-                // CreatedAt adalah DateTime? di model, jadi gunakan HasDefaultValueSql
                 entity.Property(k => k.CreatedAt)
                     .HasDefaultValueSql("NOW()");
 
@@ -28,23 +49,18 @@ namespace testing.Data
                 entity.HasIndex(k => k.Uid)
                     .IsUnique();
 
-                // Relasi dengan User
                 entity.HasOne(k => k.User)
                     .WithMany(u => u.Kartu)
                     .HasForeignKey(k => k.UserId)
                     .OnDelete(DeleteBehavior.SetNull);
 
-                // Relasi dengan Kelas
                 entity.HasOne(k => k.Kelas)
                     .WithMany(k => k.Kartu)
                     .HasForeignKey(k => k.KelasId)
                     .OnDelete(DeleteBehavior.SetNull);
-
-                // HAPUS CHECK CONSTRAINT UNTUK KOMPATIBILITAS
-                // entity.ToTable(t => t.HasCheckConstraint("CK_Kartu_SingleOwner", ...));
             });
 
-            // Konfigurasi User - SESUAIKAN DENGAN MODEL
+            // Konfigurasi User
             modelBuilder.Entity<User>(entity =>
             {
                 entity.Property(u => u.CreatedAt)
@@ -54,14 +70,11 @@ namespace testing.Data
                     .IsUnique();
             });
 
-            // Konfigurasi AksesLog - SESUAIKAN DENGAN MODEL
+            // Konfigurasi AksesLog
             modelBuilder.Entity<AksesLog>(entity =>
             {
-                // GUNAKAN PROPERTY YANG ADA DI MODEL
                 entity.Property(a => a.TimestampMasuk)
                     .HasDefaultValueSql("NOW()");
-
-                // TimestampKeluar tidak perlu default value karena nullable
 
                 entity.HasOne(a => a.Kartu)
                     .WithMany(k => k.AksesLogs)

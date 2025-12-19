@@ -106,6 +106,9 @@ builder.Services.AddScoped<IRuanganService, RuanganService>();
 builder.Services.AddScoped<ITapService, TapService>();
 builder.Services.AddScoped<IUserService, UserService>();
 
+builder.Services.AddScoped<IPeriodeRepository, PeriodeRepository>();
+builder.Services.AddScoped<IPeriodeService, PeriodeService>();
+
 builder.Services.AddScoped<IBroadcastService, BroadcastService>();
 
 builder.Services.AddScoped<IKartuRepository, KartuRepository>();

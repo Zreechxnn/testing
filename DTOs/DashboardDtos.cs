@@ -4,6 +4,10 @@ public class DashboardStatsDto
 {
     public int TotalAkses { get; set; }
     public int AktifSekarang { get; set; }
+
+    public int Akses30Hari { get; set; }
+    public int AksesTahunIni { get; set; }
+
     public int TotalKartu { get; set; }
     public int TotalKelas { get; set; }
     public int TotalRuangan { get; set; }

@@ -247,27 +247,42 @@ public class AksesLogService : IAksesLogService
     {
         try
         {
-            var totalAkses = await _aksesLogRepository.CountAsync();
-
-            var semuaAkses = await _aksesLogRepository.GetAllAsync();
-            var aktifSekarang = semuaAkses.Count(a => a.TimestampKeluar == null);
-
             var totalKartu = await _kartuRepository.CountAsync();
             var totalKelas = await _kelasRepository.CountAsync();
             var totalRuangan = await _ruanganRepository.CountAsync();
             var totalUsers = await _userRepository.CountAsync();
 
+            // Ambil semua log (jika data sangat besar nanti perlu optimasi CountAsync dengan filter)
+            var semuaAkses = await _aksesLogRepository.GetAllAsync();
+
+            var totalAkses = semuaAkses.Count();
+            var aktifSekarang = semuaAkses.Count(a => a.TimestampKeluar == null);
+
+            // --- LOGIKA BARU: HITUNG 30 HARI & 1 TAHUN ---
+            var now = DateTime.UtcNow;
+            var thirtyDaysAgo = now.AddDays(-30);
+            var startOfYear = new DateTime(now.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+            var akses30Hari = semuaAkses.Count(a => a.TimestampMasuk >= thirtyDaysAgo);
+            var aksesTahunIni = semuaAkses.Count(a => a.TimestampMasuk >= startOfYear);
+            // ---------------------------------------------
+
             var stats = new DashboardStatsDto
             {
                 TotalAkses = totalAkses,
                 AktifSekarang = aktifSekarang,
+
+                // Isi field baru
+                Akses30Hari = akses30Hari,
+                AksesTahunIni = aksesTahunIni,
+
                 TotalKartu = totalKartu,
                 TotalKelas = totalKelas,
                 TotalRuangan = totalRuangan,
                 TotalUsers = totalUsers
             };
 
-            // OPTIONAL: Broadcast stats update via SignalR
+            // Broadcast update via SignalR
             try
             {
                 await _hubContext.Clients.Group("dashboard").SendAsync("DashboardStatsUpdated", new
@@ -367,24 +382,32 @@ public class AksesLogService : IAksesLogService
     {
         try
         {
-            // 1. Tentukan range tanggal (UTC)
-            var endDate = DateTime.UtcNow.Date;
-            var startDate = endDate.AddDays(-29); // 30 hari mundur (termasuk hari ini)
+            // 1. Tentukan tanggal patokan (Hari ini jam 00:00)
+            var todayDate = DateTime.UtcNow.Date;
+            var startDate = todayDate.AddDays(-29); // 30 hari ke belakang
 
-            // 2. Ambil data mentah dari DB
-            var rawData = await _aksesLogRepository.GetDailyStatsAsync(startDate, endDate);
+            // 2. Tentukan batas akhir QUERY DATABASE
+            // FIX: Tambahkan 1 hari dikurang 1 tick agar mencakup sampai jam 23:59:59 hari ini
+            // Kalau cuma pakai todayDate, data jam 08:00 pagi hari ini tidak akan terambil.
+            var queryEndDate = todayDate.AddDays(1).AddTicks(-1);
+
+            // 3. Ambil data mentah dari DB dengan range yang SUDAH DIPERBAIKI
+            var rawData = await _aksesLogRepository.GetDailyStatsAsync(startDate, queryEndDate);
 
             var result = new List<DailyStatsDto>();
 
-            // 3. Loop tanggal satu per satu untuk isi gap kosong dengan 0
-            for (var date = startDate; date <= endDate; date = date.AddDays(1))
+            // 4. Loop untuk mengisi grafik (termasuk tanggal yang datanya 0)
+            for (var date = startDate; date <= todayDate; date = date.AddDays(1))
             {
+                // Konversi tanggal ke WIB agar label di grafik sesuai user Indonesia
+                var dateWib = TimeZoneInfo.ConvertTimeFromUtc(date, WibTimeZone);
+
                 result.Add(new DailyStatsDto
                 {
-                    // Format Tanggal Cantik (misal: "08 Dec")
-                    Tanggal = date.ToString("dd MMM"),
+                    // Format Label: "21 Dec"
+                    Tanggal = dateWib.ToString("dd MMM"),
 
-                    // Ambil data jika ada, jika tidak 0
+                    // Cek apakah ada data di tanggal tersebut
                     Total = rawData.ContainsKey(date) ? rawData[date] : 0
                 });
             }

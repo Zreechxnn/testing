@@ -8,6 +8,7 @@ public interface IScanService
     Task<ApiResponse<ScanCheckResponse>> CheckCard(ScanCheckRequest request);
     Task<ApiResponse<List<object>>> GetKartuTerdaftar();
     Task<ApiResponse<object>> DeleteKartu(int id);
+    Task<ApiResponse<ScanResponse>> GetLatestCard();
 }
 
 public class ScanRequest
@@ -38,3 +39,4 @@ public class ScanCheckResponse
     public bool Terdaftar { get; set; }
     public string? StatusKartu { get; set; }
 }
+

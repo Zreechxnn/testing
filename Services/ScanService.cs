@@ -233,4 +233,31 @@ public class ScanService : IScanService
             return ApiResponse<object>.ErrorResult($"Server Error: {ex.Message}");
         }
     }
+
+    public async Task<ApiResponse<ScanResponse>> GetLatestCard()
+    {
+        try
+        {
+            // Ambil 1 kartu terakhir berdasarkan CreatedAt
+            var kartu = await _kartuRepository.GetAllAsync(); // Pastikan repository mendukung sorting, atau ambil semua dlu
+            var lastCard = kartu.OrderByDescending(k => k.CreatedAt).FirstOrDefault();
+
+            if (lastCard == null)
+                return ApiResponse<ScanResponse>.ErrorResult("Belum ada data kartu");
+
+            return ApiResponse<ScanResponse>.SuccessResult(new ScanResponse
+            {
+                Success = true,
+                Status = lastCard.Status ?? "UNKNOWN",
+                Message = "Data terakhir ditemukan",
+                Uid = lastCard.Uid,
+                Timestamp = lastCard.CreatedAt?.ToString("yyyy-MM-dd HH:mm:ss")
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error GetLatestCard");
+            return ApiResponse<ScanResponse>.ErrorResult(ex.Message);
+        }
+    }
 }

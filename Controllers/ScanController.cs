@@ -51,4 +51,11 @@ public class ScanController : ControllerBase
             return BadRequest(response);
         return Ok(response);
     }
+
+    [HttpGet("latest")]
+    public async Task<ActionResult<ApiResponse<ScanResponse>>> GetLatest()
+    {
+        var response = await _scanService.GetLatestCard();
+        return Ok(response);
+    }
 }

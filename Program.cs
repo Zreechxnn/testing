@@ -117,6 +117,8 @@ builder.Services.AddScoped<IKelasRepository, KelasRepository>();
 builder.Services.AddScoped<IRuanganRepository, RuanganRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
+builder.Services.AddScoped<IScanService, ScanService>();
+
 // Setup Ping Service
 builder.Services.AddHttpClient(); // Wajib untuk melakukan request HTTP
 builder.Services.AddHostedService<DailyPingService>(); // Mendaftarkan service background

@@ -36,61 +36,82 @@ public class ScanService : IScanService
     {
         try
         {
-            _logger.LogInformation("Received card registration: UID={Uid}", request.Uid);
-
+            // 1. Validasi Input Dasar
             if (string.IsNullOrWhiteSpace(request.Uid))
             {
                 return ApiResponse<ScanResponse>.ErrorResult("UID kartu tidak boleh kosong");
             }
 
-            // Normalisasi UID: trim spasi, pertahankan format asli
+            // Normalisasi: Hapus spasi di awal/akhir
             var normalizedUid = request.Uid.Trim();
 
+            _logger.LogInformation("Processing Register: UID={Uid}", normalizedUid);
+
+            // 2. CEK DUPLIKAT (PENTING AGAR TIDAK ERROR 500)
+            // Kita cek apakah kartu ini sudah ada di database?
             var existingKartu = await _kartuRepository.GetByUidAsync(normalizedUid);
+
             if (existingKartu != null)
             {
-                _logger.LogWarning("Kartu sudah terdaftar: UID={Uid}", normalizedUid);
-
-                var response = new ScanResponse
+                // Jika sudah ada, jangan throw error.
+                // Kembalikan sukses dengan status "EXISTING". 
+                // Ini mencegah alat/frontend mengira sistem crash.
+                return ApiResponse<ScanResponse>.SuccessResult(new ScanResponse
                 {
-                    Success = false,
-                    Status = "KARTU SUDAH TERDAFTAR",
-                    Message = $"Kartu dengan UID {normalizedUid} sudah terdaftar dalam sistem",
-                    Uid = normalizedUid
-                };
-
-                return ApiResponse<ScanResponse>.SuccessResult(response);
+                    Success = true,
+                    Status = "EXISTING",
+                    Message = "Kartu sudah terdaftar sebelumnya",
+                    Uid = existingKartu.Uid,
+                    Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                });
             }
 
+            // 3. Buat Object Baru
+            // Kita biarkan UserId dan KelasId NULL sesuai constraint database
             var kartu = new Kartu
             {
-                Uid = normalizedUid, // Simpan dengan format asli
-                Status = "AKTIF"
+                Uid = normalizedUid,
+                Status = "AKTIF",
+                Keterangan = "Registered via Scan", // Keterangan default
+                CreatedAt = DateTime.UtcNow,        // Wajib isi CreatedAt
+
+                // Pastikan ini NULL agar lolos constraint "CK_Kartu_SingleOwner"
+                UserId = null,
+                KelasId = null
             };
 
+            // 4. Simpan ke Database
             await _kartuRepository.AddAsync(kartu);
             var saved = await _kartuRepository.SaveAsync();
 
             if (!saved)
             {
-                return ApiResponse<ScanResponse>.ErrorResult("Gagal mendaftarkan kartu");
+                return ApiResponse<ScanResponse>.ErrorResult("Database menolak penyimpanan data (No rows affected).");
             }
 
-            _logger.LogInformation("Kartu berhasil didaftarkan: UID={Uid}", kartu.Uid);
-
-            var logData = new
+            // 5. Kirim Notifikasi Realtime ke Dashboard (SignalR)
+            try
             {
-                Type = "CARD_REGISTERED",
-                Uid = kartu.Uid,
-                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                Message = $"Kartu berhasil didaftarkan: {kartu.Uid}"
-            };
-            await _hubContext.Clients.All.SendAsync("ReceiveCardRegistration", logData);
+                var logData = new
+                {
+                    Type = "CARD_REGISTERED",
+                    Uid = kartu.Uid,
+                    Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    Message = $"Kartu baru berhasil didaftarkan: {kartu.Uid}"
+                };
+                await _hubContext.Clients.All.SendAsync("ReceiveCardRegistration", logData);
+            }
+            catch (Exception hubEx)
+            {
+                // Jangan biarkan error SignalR membatalkan response API
+                _logger.LogWarning("Gagal mengirim notifikasi SignalR: {Message}", hubEx.Message);
+            }
 
+            // 6. Return Sukses
             var scanResponse = new ScanResponse
             {
                 Success = true,
-                Status = "SUKSES",
+                Status = "SUCCESS",
                 Message = "Kartu berhasil didaftarkan",
                 Uid = kartu.Uid,
                 Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
@@ -100,8 +121,13 @@ public class ScanService : IScanService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error registering card: UID={Uid}", request.Uid);
-            return ApiResponse<ScanResponse>.ErrorResult("Terjadi kesalahan internal server");
+            // Tangkap Error Database Sebenarnya (InnerException)
+            var realError = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+
+            _logger.LogError(ex, "CRITICAL ERROR RegisterCard: {Message}", realError);
+
+            // Tampilkan error asli di response API untuk debugging
+            return ApiResponse<ScanResponse>.ErrorResult($"Gagal Register: {realError}");
         }
     }
 
@@ -109,51 +135,39 @@ public class ScanService : IScanService
     {
         try
         {
-            _logger.LogInformation("Checking card: UID={Uid}", request.Uid);
-
             if (string.IsNullOrWhiteSpace(request.Uid))
-            {
-                return ApiResponse<ScanCheckResponse>.ErrorResult("UID kartu tidak boleh kosong");
-            }
+                return ApiResponse<ScanCheckResponse>.ErrorResult("UID kosong");
 
             var kartu = await _kartuRepository.GetByUidAsync(request.Uid);
 
             if (kartu != null)
             {
-                _logger.LogInformation("Kartu ditemukan: UID={Uid}", request.Uid);
-
-                var response = new ScanCheckResponse
+                return ApiResponse<ScanCheckResponse>.SuccessResult(new ScanCheckResponse
                 {
                     Success = true,
-                    Status = "KARTU TERDAFTAR",
-                    Message = "Kartu sudah terdaftar dalam sistem",
+                    Status = "TERDAFTAR",
+                    Message = "Kartu terdaftar",
                     Uid = kartu.Uid,
                     Terdaftar = true,
                     StatusKartu = kartu.Status
-                };
-
-                return ApiResponse<ScanCheckResponse>.SuccessResult(response);
+                });
             }
             else
             {
-                _logger.LogInformation("Kartu tidak terdaftar: UID={Uid}", request.Uid);
-
-                var response = new ScanCheckResponse
+                return ApiResponse<ScanCheckResponse>.SuccessResult(new ScanCheckResponse
                 {
                     Success = true,
-                    Status = "KARTU TIDAK TERDAFTAR",
-                    Message = "Kartu belum terdaftar dalam sistem",
+                    Status = "BELUM TERDAFTAR",
+                    Message = "Kartu belum terdaftar",
                     Uid = request.Uid,
                     Terdaftar = false
-                };
-
-                return ApiResponse<ScanCheckResponse>.SuccessResult(response);
+                });
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error checking card: UID={Uid}", request.Uid);
-            return ApiResponse<ScanCheckResponse>.ErrorResult("Terjadi kesalahan internal server");
+            _logger.LogError(ex, "Error checking card");
+            return ApiResponse<ScanCheckResponse>.ErrorResult("Server Error");
         }
     }
 
@@ -161,22 +175,22 @@ public class ScanService : IScanService
     {
         try
         {
-            var kartuTerdaftar = await _kartuRepository.GetAllAsync();
-            var result = kartuTerdaftar.Select(k => new
+            var data = await _kartuRepository.GetAllAsync();
+            var result = data.Select(k => new
             {
-                Id = k.Id,
-                Uid = k.Uid,
-                Status = k.Status,
-                Keterangan = k.Keterangan,
-                TanggalDaftar = k.CreatedAt.HasValue ? k.CreatedAt.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Unknown"
-            }).OrderBy(k => k.Uid).Cast<object>().ToList();
+                k.Id,
+                k.Uid,
+                k.Status,
+                k.Keterangan,
+                Tanggal = k.CreatedAt.HasValue ? k.CreatedAt.Value.ToString("yyyy-MM-dd HH:mm") : "-"
+            }).Cast<object>().ToList();
 
             return ApiResponse<List<object>>.SuccessResult(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting kartu terdaftar");
-            return ApiResponse<List<object>>.ErrorResult("Error retrieving kartu terdaftar");
+            _logger.LogError(ex, "Error getting list");
+            return ApiResponse<List<object>>.ErrorResult("Server Error");
         }
     }
 
@@ -185,48 +199,38 @@ public class ScanService : IScanService
         try
         {
             var kartu = await _kartuRepository.GetByIdAsync(id);
-            if (kartu == null)
-            {
-                return ApiResponse<object>.ErrorResult("Kartu tidak ditemukan");
-            }
+            if (kartu == null) return ApiResponse<object>.ErrorResult("Tidak ditemukan");
 
-            var hasAccessLog = await _aksesLogRepository.AnyByKartuIdAsync(id);
-            if (hasAccessLog)
-            {
-                return ApiResponse<object>.ErrorResult("Tidak dapat menghapus kartu karena memiliki riwayat akses");
-            }
+            // Cek Relasi sebelum hapus
+            if (await _aksesLogRepository.AnyByKartuIdAsync(id))
+                return ApiResponse<object>.ErrorResult("Gagal: Kartu memiliki riwayat log akses");
 
-            var userWithCard = await _userRepository.GetByKartuUidAsync(kartu.Uid);
-            if (userWithCard != null)
-            {
-                return ApiResponse<object>.ErrorResult("Tidak dapat menghapus kartu karena terdaftar pada user");
-            }
+            if (await _userRepository.GetByKartuUidAsync(kartu.Uid) != null)
+                return ApiResponse<object>.ErrorResult("Gagal: Kartu masih dipakai User");
 
             _kartuRepository.Remove(kartu);
-            var saved = await _kartuRepository.SaveAsync();
-
-            if (!saved)
+            if (await _kartuRepository.SaveAsync())
             {
-                return ApiResponse<object>.ErrorResult("Gagal menghapus kartu");
+                // Notif SignalR Delete
+                try
+                {
+                    await _hubContext.Clients.All.SendAsync("ReceiveCardRegistration", new
+                    {
+                        Type = "CARD_DELETED",
+                        Uid = kartu.Uid
+                    });
+                }
+                catch { }
+
+                return ApiResponse<object>.SuccessResult(null!, "Terhapus");
             }
 
-            _logger.LogInformation("Kartu deleted: UID={Uid}", kartu.Uid);
-
-            var logData = new
-            {
-                Type = "CARD_DELETED",
-                Uid = kartu.Uid,
-                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                Message = $"Kartu {kartu.Uid} berhasil dihapus"
-            };
-            await _hubContext.Clients.All.SendAsync("ReceiveCardRegistration", logData);
-
-            return ApiResponse<object>.SuccessResult(null!, "Kartu berhasil dihapus");
+            return ApiResponse<object>.ErrorResult("Gagal hapus");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting kartu: {Id}", id);
-            return ApiResponse<object>.ErrorResult("Error deleting kartu");
+            _logger.LogError(ex, "Error delete");
+            return ApiResponse<object>.ErrorResult($"Server Error: {ex.Message}");
         }
     }
 }

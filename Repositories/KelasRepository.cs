@@ -17,7 +17,6 @@ public class KelasRepository : IKelasRepository
     {
         return await _context.Kelas
             .Include(k => k.Periode)
-            .AsNoTracking()
             .FirstOrDefaultAsync(k => k.Id == id);
     }
 
@@ -60,6 +59,7 @@ public class KelasRepository : IKelasRepository
     {
         return await _context.SaveChangesAsync() > 0;
     }
+
     public async Task<IEnumerable<Kelas>> GetByPeriodeAsync(int periodeId)
     {
         return await _context.Kelas

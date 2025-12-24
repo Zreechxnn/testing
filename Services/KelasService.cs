@@ -12,18 +12,18 @@ public class KelasService : IKelasService
     private readonly IKelasRepository _kelasRepository;
     private readonly IMapper _mapper;
     private readonly ILogger<KelasService> _logger;
-    private readonly IHubContext<LogHub> _hubContext; // TAMBAHKAN INI
+    private readonly IHubContext<LogHub> _hubContext;
 
     public KelasService(
         IKelasRepository kelasRepository,
         IMapper mapper,
         ILogger<KelasService> logger,
-        IHubContext<LogHub> hubContext) // TAMBAHKAN PARAMETER
+        IHubContext<LogHub> hubContext)
     {
         _kelasRepository = kelasRepository;
         _mapper = mapper;
         _logger = logger;
-        _hubContext = hubContext; // ASSIGN
+        _hubContext = hubContext;
     }
 
     public async Task<ApiResponse<List<KelasDto>>> GetAllKelas()
@@ -125,7 +125,13 @@ public class KelasService : IKelasService
             // Simpan nama lama untuk notifikasi
             var namaLama = kelas.Nama;
 
+            // Map data baru
             _mapper.Map(request, kelas);
+
+            // *** FIX PENTING ***
+            // Putuskan hubungan dengan objek Periode lama agar EF Core membaca PeriodeId yang baru
+            kelas.Periode = null;
+
             _kelasRepository.Update(kelas);
             var saved = await _kelasRepository.SaveAsync();
 
@@ -136,9 +142,10 @@ public class KelasService : IKelasService
 
             _logger.LogInformation("Kelas updated: {Id} - {Nama}", kelas.Id, kelas.Nama);
 
+            // Karena kita set kelas.Periode = null, kita harus fetch ulang atau map manual jika ingin return data lengkap dengan nama periode
+            // Tapi biasanya Frontend hanya butuh konfirmasi sukses.
             var kelasDto = _mapper.Map<KelasDto>(kelas);
 
-            // TAMBAHKAN NOTIFIKASI SIGNALR
             await SendKelasNotification("KELAS_UPDATED", kelasDto,
                 $"Kelas '{namaLama}' berhasil diupdate menjadi '{kelas.Nama}'");
 
@@ -171,7 +178,6 @@ public class KelasService : IKelasService
 
             _logger.LogInformation("Kelas deleted: {Id} - {Nama}", kelas.Id, kelas.Nama);
 
-            // TAMBAHKAN NOTIFIKASI SIGNALR
             await SendKelasNotification("KELAS_DELETED", new KelasDto
             {
                 Id = id,
@@ -197,12 +203,11 @@ public class KelasService : IKelasService
                 return ApiResponse<KelasStatsDto>.ErrorResult("Kelas tidak ditemukan");
             }
 
-            // Karena kartu sekarang independen, stats untuk kelas mungkin berbeda
             var stats = new KelasStatsDto
             {
                 Kelas = kelas.Nama,
-                TotalAkses = 0, // Tidak bisa dihitung karena kartu independen
-                AktifSekarang = 0 // Tidak bisa dihitung karena kartu independen
+                TotalAkses = 0,
+                AktifSekarang = 0
             };
 
             return ApiResponse<KelasStatsDto>.SuccessResult(stats);
@@ -227,13 +232,8 @@ public class KelasService : IKelasService
                 Message = customMessage ?? $"Kelas {kelasDto.Nama} telah {GetEventAction(eventType)}"
             };
 
-            // Kirim ke semua client yang terhubung
             await _hubContext.Clients.All.SendAsync("KelasNotification", notification);
-
-            // Kirim ke grup admin untuk logging sistem
             await _hubContext.Clients.Group("admin").SendAsync("SystemNotification", notification);
-
-            _logger.LogDebug($"SignalR notification sent for {eventType}: {kelasDto.Nama}");
         }
         catch (Exception ex)
         {
@@ -251,6 +251,7 @@ public class KelasService : IKelasService
             _ => "diubah"
         };
     }
+
     public async Task<ApiResponse<List<KelasDto>>> GetKelasByPeriode(int periodeId)
     {
         var data = await _kelasRepository.GetByPeriodeAsync(periodeId);

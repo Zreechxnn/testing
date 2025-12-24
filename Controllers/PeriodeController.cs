@@ -28,4 +28,25 @@ public class PeriodeController : ControllerBase
         var result = await _periodeService.Create(request);
         return Ok(result);
     }
+
+    // <--- Tambahkan endpoint ini
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        var result = await _periodeService.Delete(id);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Ok(result);
+    }
+
+    // Jangan lupa endpoint SetActive jika belum ada di Controller kamu
+    [HttpPut("{id}/active")]
+    public async Task<IActionResult> SetActive(int id)
+    {
+        var result = await _periodeService.SetActive(id);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
 }

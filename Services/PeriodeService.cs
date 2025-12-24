@@ -39,13 +39,10 @@ public class PeriodeService : IPeriodeService
             var periode = await _repo.GetByIdAsync(id);
             if (periode == null) return ApiResponse<object>.ErrorResult("Periode tidak ditemukan");
 
-            // 1. Ambil semua periode
             var allPeriode = await _repo.GetAllAsync();
-
-            // 2. Set semua periode jadi tidak aktif
             foreach (var p in allPeriode)
             {
-                p.IsAktif = (p.Id == id); // Hanya ID terpilih yang true
+                p.IsAktif = (p.Id == id);
                 _repo.Update(p);
             }
 
@@ -56,6 +53,35 @@ public class PeriodeService : IPeriodeService
         {
             _logger.LogError(ex, "Gagal mengaktifkan periode");
             return ApiResponse<object>.ErrorResult("Gagal mengaktifkan periode");
+        }
+    }
+
+    public async Task<ApiResponse<object>> Delete(int id)
+    {
+        try
+        {
+            var periode = await _repo.GetByIdAsync(id);
+            if (periode == null)
+            {
+                return ApiResponse<object>.ErrorResult("Periode tidak ditemukan");
+            }
+
+            // Opsional: Cek jika periode aktif, cegah penghapusan
+            if (periode.IsAktif)
+            {
+                return ApiResponse<object>.ErrorResult("Tidak dapat menghapus periode yang sedang aktif.");
+            }
+
+            _repo.Remove(periode);
+            await _repo.SaveAsync();
+
+            return ApiResponse<object>.SuccessResult(null, "Periode berhasil dihapus");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting periode {Id}", id);
+            // Error ini biasanya muncul jika masih ada Kelas yang terhubung ke Periode ini
+            return ApiResponse<object>.ErrorResult("Gagal menghapus periode. Pastikan tidak ada Kelas yang terhubung dengan periode ini.");
         }
     }
 }

@@ -6,4 +6,5 @@ public interface IPeriodeService
     Task<ApiResponse<object>> SetActive(int id);
     Task<ApiResponse<List<PeriodeDto>>> GetAll();
     Task<ApiResponse<PeriodeDto>> Create(PeriodeCreateRequest request);
+    Task<ApiResponse<object>> Delete(int id);
 }

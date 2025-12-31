@@ -16,8 +16,8 @@ public class KelasRepository : IKelasRepository
     public async Task<Kelas?> GetByIdAsync(int id)
     {
         return await _context.Kelas
-            .Include(k => k.Periode)
-            .FirstOrDefaultAsync(k => k.Id == id);
+            .Include(k => k.Periode) // Pastikan ini ada
+        .FirstOrDefaultAsync(k => k.Id == id);
     }
 
     public async Task<IEnumerable<Kelas>> GetAllAsync()

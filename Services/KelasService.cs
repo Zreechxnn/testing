@@ -1,5 +1,6 @@
 using AutoMapper;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using testing.DTOs;
 using testing.Hubs;
 using testing.Models;
@@ -123,7 +124,7 @@ public class KelasService : IKelasService
     {
         try
         {
-            // 1. Ambil Data Lama (Tracked Entity)
+            // 1. Ambil Data Lama
             var kelas = await _kelasRepository.GetByIdAsync(id);
             if (kelas == null)
             {
@@ -136,14 +137,14 @@ public class KelasService : IKelasService
                 return ApiResponse<KelasDto>.ErrorResult("Nama kelas harus diisi");
             }
 
-            // 3. Validasi Duplikat (Exclude ID sendiri)
+            // 3. Validasi Duplikat Nama
             var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama, id);
             if (existingKelas)
             {
                 return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar");
             }
 
-            // 4. Validasi Periode Baru (Wajib Valid)
+            // 4. Validasi Periode Baru
             var periodeBaru = await _periodeRepository.GetByIdAsync(request.PeriodeId);
             if (periodeBaru == null)
             {
@@ -152,43 +153,37 @@ public class KelasService : IKelasService
 
             var namaLama = kelas.Nama;
 
-            // 5. MAPPING DATA BARU
-            _mapper.Map(request, kelas);
-
-            // ============================================================
-            // [FIX CORE ISSUE]: Mencegah Error "violates not-null constraint"
-            // ============================================================
-
-            // A. Paksa ID tetap sama (Jaga-jaga tertimpa 0 oleh Mapper)
-            kelas.Id = id;
-
-            // B. Paksa isi PeriodeId secara eksplisit (INI YANG SEBELUMNYA KURANG)
+            // 5. Update data secara eksplisit
+            kelas.Nama = request.Nama.Trim();
             kelas.PeriodeId = request.PeriodeId;
 
-            // C. Putuskan relasi objek lama agar EF Core mendeteksi perubahan ID kolom
-            kelas.Periode = null;
-
-            // 6. Save
-            // Tidak perlu panggil Update() karena entity diload via GetByIdAsync (Tracked)
-            var saved = await _kelasRepository.SaveAsync();
-
-            // Note: saved bernilai false jika data tidak ada yang berubah, itu normal.
+            // 6. Simpan perubahan
+            await _kelasRepository.SaveAsync();
 
             _logger.LogInformation("Kelas updated: {Id} - {Nama}", kelas.Id, kelas.Nama);
 
             // 7. Siapkan Response
-            var kelasDto = _mapper.Map<KelasDto>(kelas);
-            kelasDto.PeriodeNama = periodeBaru.Nama; // Isi manual nama periode baru
+            var kelasDto = new KelasDto
+            {
+                Id = kelas.Id,
+                Nama = kelas.Nama,
+                PeriodeId = kelas.PeriodeId,
+                PeriodeNama = periodeBaru.Nama
+            };
 
             await SendKelasNotification("KELAS_UPDATED", kelasDto,
                 $"Kelas '{namaLama}' berhasil diupdate menjadi '{kelas.Nama}'");
 
             return ApiResponse<KelasDto>.SuccessResult(kelasDto, "Kelas berhasil diupdate");
         }
+        catch (DbUpdateException dbEx)
+        {
+            _logger.LogError(dbEx, "Database error updating kelas: {Id}", id);
+            return ApiResponse<KelasDto>.ErrorResult($"Database error: {dbEx.InnerException?.Message ?? dbEx.Message}");
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating kelas: {Id}. Details: {Message}", id, ex.Message);
-            // Return pesan error asli agar mudah debugging di Postman/Swagger
+            _logger.LogError(ex, "Error updating kelas: {Id}", id);
             return ApiResponse<KelasDto>.ErrorResult($"Gagal mengupdate kelas: {ex.Message}");
         }
     }

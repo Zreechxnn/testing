@@ -244,35 +244,36 @@ public class DailyPingService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("⏰ DailyPingService started. Will ping '/' every 10 minutes.");
+        _logger.LogInformation("⏰ Anti-Sleep Service dimulai. Ping setiap 5 menit.");
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            // Ubah baris ini dari FromHours(24) menjadi FromMinutes(10)
-            await Task.Delay(TimeSpan.FromMinutes(10), stoppingToken);
-
             try
             {
                 var client = _httpClientFactory.CreateClient();
 
-                var appUrl = "http://localhost:7860";
+                var appUrl = "https://zreech-apiakses.hf.space";
                 var urls = _configuration["ASPNETCORE_URLS"];
+
                 if (!string.IsNullOrEmpty(urls))
                 {
-                    appUrl = urls.Split(';')[0];
-                    appUrl = appUrl.Replace("*", "localhost").Replace("+", "localhost");
+                    appUrl = urls.Split(';')[0].Replace("*", "localhost").Replace("+", "localhost");
                 }
 
-                _logger.LogInformation($"[🚀 DAILY PING] Sending GET request to {appUrl}/ ...");
+                _logger.LogInformation($"[🚀 KEEP-ALIVE] Ping ke {appUrl} ...");
 
+                // Gunakan timeout pendek agar tidak memblokir thread
+                client.Timeout = TimeSpan.FromSeconds(10);
                 var response = await client.GetAsync($"{appUrl}/", stoppingToken);
 
-                _logger.LogInformation($"[✅ DAILY PING] Response: {response.StatusCode}");
+                _logger.LogInformation($"[✅ KEEP-ALIVE] Status: {response.StatusCode}");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"[❌ DAILY PING FAILED] Error: {ex.Message}");
+                _logger.LogError($"[⚠️ KEEP-ALIVE ERROR] {ex.Message}");
             }
+
+            await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
         }
     }
 }

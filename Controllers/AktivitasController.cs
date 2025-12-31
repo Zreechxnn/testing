@@ -106,7 +106,7 @@ public class AktivitasController : ControllerBase
     }
 
     [HttpPut("{id}/catatan")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,guru")]
     public async Task<IActionResult> UpdateCatatan(int id, [FromBody] AksesLogUpdateRequest request)
     {
         var response = await _aksesLogService.UpdateKeterangan(id, request);

@@ -132,7 +132,7 @@ public class KelasService : IKelasService
             // Putuskan hubungan dengan objek Periode lama agar EF Core membaca PeriodeId yang baru
             kelas.Periode = null;
 
-            _kelasRepository.Update(kelas);
+            // _kelasRepository.Update(kelas);
             var saved = await _kelasRepository.SaveAsync();
 
             if (!saved)

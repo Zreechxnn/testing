@@ -10,20 +10,20 @@ namespace testing.Services;
 public class KelasService : IKelasService
 {
     private readonly IKelasRepository _kelasRepository;
-    private readonly IPeriodeRepository _periodeRepository; // Tambahan untuk validasi
+    private readonly IPeriodeRepository _periodeRepository; // Inject Repo Periode
     private readonly IMapper _mapper;
     private readonly ILogger<KelasService> _logger;
     private readonly IHubContext<LogHub> _hubContext;
 
     public KelasService(
         IKelasRepository kelasRepository,
-        IPeriodeRepository periodeRepository, // Inject PeriodeRepo
+        IPeriodeRepository periodeRepository, // Inject di Constructor
         IMapper mapper,
         ILogger<KelasService> logger,
         IHubContext<LogHub> hubContext)
     {
         _kelasRepository = kelasRepository;
-        _periodeRepository = periodeRepository;
+        _periodeRepository = periodeRepository; // Assign
         _mapper = mapper;
         _logger = logger;
         _hubContext = hubContext;
@@ -68,13 +68,13 @@ public class KelasService : IKelasService
     {
         try
         {
-            // 1. Validasi Input
+            // 1. Validasi Nama Kosong
             if (string.IsNullOrWhiteSpace(request.Nama))
             {
                 return ApiResponse<KelasDto>.ErrorResult("Nama kelas harus diisi");
             }
 
-            // 2. Validasi Duplikat Nama
+            // 2. Validasi Nama Duplikat
             var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama);
             if (existingKelas)
             {
@@ -91,6 +91,9 @@ public class KelasService : IKelasService
             // 4. Mapping & Save
             var kelas = _mapper.Map<Kelas>(request);
 
+            // Pastikan PeriodeId terisi (Backup jika mapper gagal)
+            kelas.PeriodeId = request.PeriodeId;
+
             await _kelasRepository.AddAsync(kelas);
             var saved = await _kelasRepository.SaveAsync();
 
@@ -101,10 +104,9 @@ public class KelasService : IKelasService
 
             _logger.LogInformation("Kelas created: {Nama}", kelas.Nama);
 
-            // 5. Return Data & Notifikasi
-            // Load ulang atau map manual agar nama periode muncul di response
+            // 5. Return Data & SignalR
             var kelasDto = _mapper.Map<KelasDto>(kelas);
-            kelasDto.PeriodeNama = periodeExist.Nama;
+            kelasDto.PeriodeNama = periodeExist.Nama; // Isi manual nama periode
 
             await SendKelasNotification("KELAS_CREATED", kelasDto, $"Kelas baru '{kelas.Nama}' berhasil ditambahkan");
 
@@ -121,7 +123,7 @@ public class KelasService : IKelasService
     {
         try
         {
-            // 1. Cek Data Lama
+            // 1. Ambil Data Lama (Tracked Entity)
             var kelas = await _kelasRepository.GetByIdAsync(id);
             if (kelas == null)
             {
@@ -141,7 +143,7 @@ public class KelasService : IKelasService
                 return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar");
             }
 
-            // 4. Validasi Periode Baru
+            // 4. Validasi Periode Baru (Wajib Valid)
             var periodeBaru = await _periodeRepository.GetByIdAsync(request.PeriodeId);
             if (periodeBaru == null)
             {
@@ -150,27 +152,27 @@ public class KelasService : IKelasService
 
             var namaLama = kelas.Nama;
 
-            // 5. Mapping Data Baru
+            // 5. MAPPING DATA BARU
             _mapper.Map(request, kelas);
 
             // ============================================================
-            // [FIX CORE ISSUE]: Mencegah Error PUT/Update
+            // [FIX CORE ISSUE]: Mencegah Error "violates not-null constraint"
             // ============================================================
 
-            // A. Paksa ID tetap sama (Mencegah AutoMapper mengubah jadi 0)
+            // A. Paksa ID tetap sama (Jaga-jaga tertimpa 0 oleh Mapper)
             kelas.Id = id;
 
-            // B. Paksa isi PeriodeId secara eksplisit (Mencegah error Not-Null Constraint)
+            // B. Paksa isi PeriodeId secara eksplisit (INI YANG SEBELUMNYA KURANG)
             kelas.PeriodeId = request.PeriodeId;
 
             // C. Putuskan relasi objek lama agar EF Core mendeteksi perubahan ID kolom
             kelas.Periode = null;
 
             // 6. Save
-            // Tidak perlu panggil _kelasRepository.Update(kelas); karena entity sudah di-track
+            // Tidak perlu panggil Update() karena entity diload via GetByIdAsync (Tracked)
             var saved = await _kelasRepository.SaveAsync();
 
-            // Note: saved bisa false jika data tidak ada yang berubah, itu normal/bukan error
+            // Note: saved bernilai false jika data tidak ada yang berubah, itu normal.
 
             _logger.LogInformation("Kelas updated: {Id} - {Nama}", kelas.Id, kelas.Nama);
 
@@ -186,7 +188,7 @@ public class KelasService : IKelasService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating kelas: {Id}. Details: {Message}", id, ex.Message);
-            // Return pesan error asli untuk mempermudah debugging di Frontend
+            // Return pesan error asli agar mudah debugging di Postman/Swagger
             return ApiResponse<KelasDto>.ErrorResult($"Gagal mengupdate kelas: {ex.Message}");
         }
     }
@@ -236,7 +238,7 @@ public class KelasService : IKelasService
                 return ApiResponse<KelasStatsDto>.ErrorResult("Kelas tidak ditemukan");
             }
 
-            // TODO: Implementasi hitung statistik riil di sini jika perlu
+            // Statistik dummy/placeholder (implementasi real butuh query ke log akses)
             var stats = new KelasStatsDto
             {
                 Kelas = kelas.Nama,
@@ -273,8 +275,6 @@ public class KelasService : IKelasService
             };
 
             await _hubContext.Clients.All.SendAsync("KelasNotification", notification);
-            // Opsional: kirim spesifik ke grup admin
-            // await _hubContext.Clients.Group("admin").SendAsync("SystemNotification", notification);
         }
         catch (Exception ex)
         {

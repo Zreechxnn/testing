@@ -244,11 +244,12 @@ public class DailyPingService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("⏰ DailyPingService started. Will ping '/' every 24 hours.");
+        _logger.LogInformation("⏰ DailyPingService started. Will ping '/' every 10 minutes.");
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
+            // Ubah baris ini dari FromHours(24) menjadi FromMinutes(10)
+            await Task.Delay(TimeSpan.FromMinutes(10), stoppingToken);
 
             try
             {
@@ -258,8 +259,8 @@ public class DailyPingService : BackgroundService
                 var urls = _configuration["ASPNETCORE_URLS"];
                 if (!string.IsNullOrEmpty(urls))
                 {
-                    appUrl = urls.Split(';')[0]; // Ambil URL pertama
-                    appUrl = appUrl.Replace("*", "localhost").Replace("+", "localhost"); // Fix wildcard binding
+                    appUrl = urls.Split(';')[0];
+                    appUrl = appUrl.Replace("*", "localhost").Replace("+", "localhost");
                 }
 
                 _logger.LogInformation($"[🚀 DAILY PING] Sending GET request to {appUrl}/ ...");

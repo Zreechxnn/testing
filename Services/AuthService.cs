@@ -117,7 +117,8 @@ public class AuthService : IAuthService
             {
                 new { Value = "admin", Label = "Administrator" },
                 new { Value = "guru", Label = "Guru" },
-                new { Value = "operator", Label = "Operator" }
+                new { Value = "operator", Label = "Operator" },
+                new { Value = "siswa", Label = "Siswa" },
             };
             return ApiResponse<List<object>>.SuccessResult(roles);
         }

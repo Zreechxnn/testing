@@ -105,56 +105,71 @@ public class KelasService : IKelasService
     {
         try
         {
+            // 1. Ambil data lama
             var kelas = await _kelasRepository.GetByIdAsync(id);
             if (kelas == null)
             {
                 return ApiResponse<KelasDto>.ErrorResult("Kelas tidak ditemukan");
             }
 
+            // 2. Validasi Nama
             if (string.IsNullOrWhiteSpace(request.Nama))
             {
                 return ApiResponse<KelasDto>.ErrorResult("Nama kelas harus diisi");
             }
 
+            // 3. Validasi Duplikat
             var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama, id);
             if (existingKelas)
             {
                 return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar");
             }
 
-            // Simpan nama lama untuk notifikasi
             var namaLama = kelas.Nama;
 
-            // Map data baru
+            // 4. MAPPING DATA BARU
             _mapper.Map(request, kelas);
 
-            // *** FIX PENTING ***
-            // Putuskan hubungan dengan objek Periode lama agar EF Core membaca PeriodeId yang baru
+            // ============================================================
+            // [FIX PENTING 1]: Paksa ID agar tetap sama dengan ID URL
+            // Karena request body tidak punya ID, Mapper mungkin mengubahnya jadi 0
+            // ============================================================
+            kelas.Id = id;
+
+            // ============================================================
+            // [FIX PENTING 2]: Null-kan objek relasi agar EF Core
+            // hanya melihat perubahan pada kolom PeriodeId
+            // ============================================================
             kelas.Periode = null;
 
-            // _kelasRepository.Update(kelas);
+            // 5. Update & Save
+            // _kelasRepository.Update(kelas); <--- HAPUS BARIS INI (Tidak perlu jika data diload dr DB)
+
             var saved = await _kelasRepository.SaveAsync();
 
             if (!saved)
             {
-                return ApiResponse<KelasDto>.ErrorResult("Gagal mengupdate kelas");
+                // Jika data yang dikirim SAMA PERSIS dengan di DB, saved akan false.
+                // Kita bisa anggap sukses atau error tergantung kebutuhan.
+                // Di sini kita return error untuk debugging.
+                return ApiResponse<KelasDto>.ErrorResult("Gagal mengupdate kelas (Data tidak berubah atau ID salah)");
             }
 
             _logger.LogInformation("Kelas updated: {Id} - {Nama}", kelas.Id, kelas.Nama);
 
-            // Karena kita set kelas.Periode = null, kita harus fetch ulang atau map manual jika ingin return data lengkap dengan nama periode
-            // Tapi biasanya Frontend hanya butuh konfirmasi sukses.
             var kelasDto = _mapper.Map<KelasDto>(kelas);
 
-            await SendKelasNotification("KELAS_UPDATED", kelasDto,
-                $"Kelas '{namaLama}' berhasil diupdate menjadi '{kelas.Nama}'");
+            // Kirim Notif SignalR (Code Anda sebelumnya)
+            // ...
 
             return ApiResponse<KelasDto>.SuccessResult(kelasDto, "Kelas berhasil diupdate");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating kelas: {Id}", id);
-            return ApiResponse<KelasDto>.ErrorResult("Gagal mengupdate kelas");
+            // Log error lengkap biar ketahuan di terminal
+            _logger.LogError(ex, "Error updating kelas: {Id}. Message: {Message}", id, ex.Message);
+            // Tampilkan pesan error asli di response sementara untuk debugging
+            return ApiResponse<KelasDto>.ErrorResult($"Gagal mengupdate kelas: {ex.Message}");
         }
     }
 

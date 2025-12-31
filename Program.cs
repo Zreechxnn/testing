@@ -227,6 +227,8 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHub<LogHub>("/hubs/log");
 
+app.MapGet("/", () => Results.Ok("API is Running 🚀"));
+
 await app.RunAsync();
 
 public class DailyPingService : BackgroundService

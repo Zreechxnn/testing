@@ -239,6 +239,21 @@ public class AksesLogRepository : IAksesLogRepository
             .ToDictionaryAsync(g => g.Date, g => g.Count);
     }
 
+    // NEW METHOD: Untuk statistik bulanan dalam rentang tanggal
+    public async Task<Dictionary<DateTime, int>> GetMonthlyStatsRangeAsync(DateTime start, DateTime end)
+    {
+        // Grouping berdasarkan Tahun dan Bulan (tanggal 1 setiap bulan sebagai key)
+        return await _context.AksesLog
+            .Where(a => a.TimestampMasuk >= start && a.TimestampMasuk <= end)
+            .GroupBy(a => new { a.TimestampMasuk.Year, a.TimestampMasuk.Month })
+            .Select(g => new
+            {
+                YearMonth = new DateTime(g.Key.Year, g.Key.Month, 1),
+                Count = g.Count()
+            })
+            .ToDictionaryAsync(g => g.YearMonth, g => g.Count);
+    }
+
     public async Task<bool> DeleteAllAsync()
     {
         var allLogs = await _context.AksesLog.ToListAsync();

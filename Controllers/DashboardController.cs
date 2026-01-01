@@ -69,4 +69,29 @@ public class DashboardController : ControllerBase
         var response = await _aksesLogService.GetLast30DaysStats();
         return Ok(response);
     }
+
+    // NEW ENDPOINTS: Tambahkan endpoint baru
+    [HttpGet("last-12-months-stats")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<List<MonthlyStatsDto>>>> GetLast12MonthsStats()
+    {
+        var response = await _aksesLogService.GetLast12MonthsStats();
+        return Ok(response);
+    }
+
+    [HttpGet("last-6-months-stats")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<List<DailyStatsDto>>>> GetLast6MonthsStats()
+    {
+        var response = await _aksesLogService.GetLast6MonthsStats();
+        return Ok(response);
+    }
+
+    [HttpGet("last-7-days-stats")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<List<DailyStatsDto>>>> GetLast7DaysStats()
+    {
+        var response = await _aksesLogService.GetLast7DaysStats();
+        return Ok(response);
+    }
 }

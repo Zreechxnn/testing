@@ -475,4 +475,129 @@ public class AksesLogService : IAksesLogService
         return ApiResponse<AksesLogDto>.SuccessResult(_mapper.Map<AksesLogDto>(log), "Catatan berhasil ditambahkan");
     }
 
+    public async Task<ApiResponse<List<MonthlyStatsDto>>> GetLast12MonthsStats()
+    {
+        try
+        {
+            // 1. Hitung tanggal mulai (12 bulan terakhir dari sekarang)
+            var todayUtc = DateTime.UtcNow.Date;
+            var twelveMonthsAgo = todayUtc.AddMonths(-11); // 12 bulan termasuk bulan ini
+
+            // 2. Ambil data dari repository
+            var rawData = await _aksesLogRepository.GetMonthlyStatsRangeAsync(twelveMonthsAgo, todayUtc);
+
+            // 3. Siapkan array nama bulan (Indonesia)
+            string[] namaBulan = { "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des" };
+            var result = new List<MonthlyStatsDto>();
+
+            // 4. Generate 12 bulan terakhir
+            for (int i = 0; i < 12; i++)
+            {
+                var currentMonth = twelveMonthsAgo.AddMonths(i);
+                var monthKey = new DateTime(currentMonth.Year, currentMonth.Month, 1);
+
+                // Format label: "Jan 2024"
+                var label = $"{namaBulan[monthKey.Month - 1]} {monthKey.Year}";
+
+                result.Add(new MonthlyStatsDto
+                {
+                    Bulan = label,
+                    Total = rawData.ContainsKey(monthKey) ? rawData[monthKey] : 0
+                });
+            }
+
+            return ApiResponse<List<MonthlyStatsDto>>.SuccessResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting last 12 months stats");
+            return ApiResponse<List<MonthlyStatsDto>>.ErrorResult("Gagal mengambil statistik 12 bulan terakhir");
+        }
+    }
+
+    public async Task<ApiResponse<List<DailyStatsDto>>> GetLast6MonthsStats()
+    {
+        try
+        {
+            // 1. Hitung tanggal mulai (6 bulan terakhir dari sekarang)
+            var todayUtc = DateTime.UtcNow.Date;
+            var sixMonthsAgo = todayUtc.AddMonths(-6);
+
+            // 2. Ambil data dari repository
+            var rawData = await _aksesLogRepository.GetMonthlyStatsRangeAsync(sixMonthsAgo, todayUtc);
+
+            var result = new List<DailyStatsDto>();
+
+            // 3. Generate 6 bulan terakhir
+            for (int i = 0; i < 6; i++)
+            {
+                var currentMonth = sixMonthsAgo.AddMonths(i);
+                var monthKey = new DateTime(currentMonth.Year, currentMonth.Month, 1);
+
+                // Konversi ke WIB untuk label
+                var monthKeyWib = TimeZoneInfo.ConvertTimeFromUtc(monthKey, WibTimeZone);
+
+                // Format label: "Mar 2024"
+                var label = monthKeyWib.ToString("MMM yyyy", new System.Globalization.CultureInfo("id-ID"));
+
+                result.Add(new DailyStatsDto
+                {
+                    Tanggal = label,
+                    Total = rawData.ContainsKey(monthKey) ? rawData[monthKey] : 0
+                });
+            }
+
+            return ApiResponse<List<DailyStatsDto>>.SuccessResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting last 6 months stats");
+            return ApiResponse<List<DailyStatsDto>>.ErrorResult("Gagal mengambil statistik 6 bulan terakhir");
+        }
+    }
+
+    public async Task<ApiResponse<List<DailyStatsDto>>> GetLast7DaysStats()
+    {
+        try
+        {
+            // 1. Tentukan tanggal patokan (Hari ini jam 00:00)
+            var todayDate = DateTime.UtcNow.Date;
+            var startDate = todayDate.AddDays(-6); // 7 hari ke belakang
+
+            // 2. Tentukan batas akhir QUERY DATABASE
+            var queryEndDate = todayDate.AddDays(1).AddTicks(-1);
+
+            // 3. Ambil data mentah dari DB
+            var rawData = await _aksesLogRepository.GetDailyStatsAsync(startDate, queryEndDate);
+
+            var result = new List<DailyStatsDto>();
+
+            // 4. Loop untuk mengisi grafik (termasuk tanggal yang datanya 0)
+            for (var date = startDate; date <= todayDate; date = date.AddDays(1))
+            {
+                // Konversi tanggal ke WIB agar label di grafik sesuai user Indonesia
+                var dateWib = TimeZoneInfo.ConvertTimeFromUtc(date, WibTimeZone);
+
+                // Gunakan nama hari singkat Indonesia
+                var hari = dateWib.ToString("ddd", new System.Globalization.CultureInfo("id-ID"));
+
+                result.Add(new DailyStatsDto
+                {
+                    // Format Label: "Sen, 21 Mar"
+                    Tanggal = $"{hari}, {dateWib:dd MMM}",
+
+                    // Cek apakah ada data di tanggal tersebut
+                    Total = rawData.ContainsKey(date) ? rawData[date] : 0
+                });
+            }
+
+            return ApiResponse<List<DailyStatsDto>>.SuccessResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting last 7 days stats");
+            return ApiResponse<List<DailyStatsDto>>.ErrorResult("Gagal mengambil statistik 7 hari terakhir");
+        }
+    }
+
 }

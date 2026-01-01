@@ -20,10 +20,6 @@ public interface IAksesLogService
     Task<ApiResponse<List<MonthlyStatsDto>>> GetMonthlyStats(int year);
     Task<ApiResponse<List<DailyStatsDto>>> GetLast30DaysStats();
 
-    Task<ApiResponse<List<MonthlyStatsDto>>> GetLast12MonthsStats();
-    Task<ApiResponse<List<DailyStatsDto>>> GetLast6MonthsStats();
-    Task<ApiResponse<List<DailyStatsDto>>> GetLast7DaysStats();
-
     Task<ApiResponse<object>> DeleteAllAksesLog();
     Task<ApiResponse<AksesLogDto>> UpdateKeterangan(int id, AksesLogUpdateRequest request);
 }

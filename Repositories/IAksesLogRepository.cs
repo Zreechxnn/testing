@@ -36,7 +36,5 @@ public interface IAksesLogRepository
 
     Task<Dictionary<int, int>> GetMonthlyStatsAsync(int year);
     Task<Dictionary<DateTime, int>> GetDailyStatsAsync(DateTime start, DateTime end);
-
-    Task<Dictionary<DateTime, int>> GetMonthlyStatsRangeAsync(DateTime start, DateTime end);
     Task<bool> DeleteAllAsync();
 }

@@ -18,24 +18,34 @@ using Microsoft.IdentityModel.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load Environment & Configuration
+// 1. Load Environment (Wajib di paling atas untuk membaca .env)
 Env.Load();
 builder.Configuration.AddEnvironmentVariables();
 
+// 2. Setup Logging Dasar
 if (builder.Environment.IsDevelopment())
 {
     IdentityModelEventSource.ShowPII = true;
+    builder.Logging.SetMinimumLevel(LogLevel.Debug);
 }
+else
+{
+    builder.Logging.SetMinimumLevel(LogLevel.Information);
+}
+
+// Hapus mapping default claim type agar tidak konflik dengan claim kustom
 JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
-// Database Connection
-var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")
-    ?? builder.Configuration.GetConnectionString("DefaultConnection");
+// ==========================================
+// CONFIGURATION & DATABASE
+// ==========================================
+
+// FIXED: Tidak perlu cek manual Environment var. .NET otomatis menggabungkan Env & Json.
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 builder.Services.AddDbContext<LabDbContext>(options =>
 {
     options.UseNpgsql(connectionString);
-
     if (builder.Environment.IsDevelopment())
     {
         options.EnableSensitiveDataLogging();
@@ -44,30 +54,37 @@ builder.Services.AddDbContext<LabDbContext>(options =>
 Console.WriteLine($"✅ Database Provider: PostgreSQL | Env: {builder.Environment.EnvironmentName}");
 
 // JWT Secret Setup
-var jwtSecretKey = Environment.GetEnvironmentVariable("JwtSettings__SecretKey")?.Trim();
+var jwtSecretKey = builder.Configuration["JwtSettings:SecretKey"]?.Trim();
 if (string.IsNullOrEmpty(jwtSecretKey))
 {
-    throw new Exception("🔥 FATAL ERROR: JWT Secret Key tidak ditemukan di .env! Pasang dulu.");
+    throw new Exception("🔥 FATAL ERROR: JWT Secret Key tidak ditemukan! Cek .env atau appsettings.");
 }
 var key = Encoding.UTF8.GetBytes(jwtSecretKey);
 
-// SignalR Configuration
+// ==========================================
+// SERVICES REGISTRATION
+// ==========================================
+
+// FIXED: SignalR Security - Detailed Errors hanya untuk Dev
 builder.Services.AddSignalR(options =>
 {
-    options.EnableDetailedErrors = true;
+    if (builder.Environment.IsDevelopment())
+    {
+        options.EnableDetailedErrors = true;
+    }
     options.MaximumReceiveMessageSize = 1024 * 1024; // 1MB
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
     options.KeepAliveInterval = TimeSpan.FromSeconds(10);
 });
 
-// Controllers Configuration
+// Controllers & Json Options
 builder.Services.AddControllers().AddJsonOptions(opts =>
 {
     opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
     opts.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 });
 
-// Swagger Configuration
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -78,14 +95,15 @@ builder.Services.AddSwaggerGen(c =>
         Type = SecuritySchemeType.Http,
         Scheme = "Bearer",
         BearerFormat = "JWT",
-        In = ParameterLocation.Header
+        In = ParameterLocation.Header,
+        Description = "Masukkan token JWT di sini (tanpa kata 'Bearer')"
     });
     c.AddSecurityRequirement(new OpenApiSecurityRequirement {
         {
             new OpenApiSecurityScheme {
                 Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
             },
-            new string[] { }
+            Array.Empty<string>()
         }
     });
 });
@@ -96,7 +114,7 @@ builder.Services.AddFluentValidationClientsideAdapters();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddAutoMapper(typeof(Program));
 
-// Dependency Injection (Services & Repositories)
+// Dependency Injection
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IKartuService, KartuService>();
@@ -105,97 +123,82 @@ builder.Services.AddScoped<IKelasService, KelasService>();
 builder.Services.AddScoped<IRuanganService, RuanganService>();
 builder.Services.AddScoped<ITapService, TapService>();
 builder.Services.AddScoped<IUserService, UserService>();
-
-builder.Services.AddScoped<IPeriodeRepository, PeriodeRepository>();
+builder.Services.AddScoped<IScanService, ScanService>();
+builder.Services.AddScoped<IBroadcastService, BroadcastService>();
 builder.Services.AddScoped<IPeriodeService, PeriodeService>();
 
-builder.Services.AddScoped<IBroadcastService, BroadcastService>();
-
+builder.Services.AddScoped<IPeriodeRepository, PeriodeRepository>();
 builder.Services.AddScoped<IKartuRepository, KartuRepository>();
 builder.Services.AddScoped<IAksesLogRepository, AksesLogRepository>();
 builder.Services.AddScoped<IKelasRepository, KelasRepository>();
 builder.Services.AddScoped<IRuanganRepository, RuanganRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 
-builder.Services.AddScoped<IScanService, ScanService>();
+// Background Services
+builder.Services.AddHttpClient();
+builder.Services.AddHostedService<DailyPingService>();
 
-// Setup Ping Service
-builder.Services.AddHttpClient(); // Wajib untuk melakukan request HTTP
-builder.Services.AddHostedService<DailyPingService>(); // Mendaftarkan service background
-// ---------------------------------
+// ==========================================
+// SECURITY (CORS & AUTH)
+// ==========================================
 
 // CORS Configuration
-var corsOrigins = Environment.GetEnvironmentVariable("CORS__Origins");
-Console.WriteLine($"[🔒 CORS CONFIG] Raw Value: '{corsOrigins}'");
-
+var corsOriginsRaw = builder.Configuration["CORS:Origins"]; // Membaca dari Env: CORS__Origins
 builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", p =>
     {
-        if (string.IsNullOrEmpty(corsOrigins) || corsOrigins == "*")
+        if (string.IsNullOrEmpty(corsOriginsRaw) || corsOriginsRaw == "*")
         {
-            p.AllowAnyOrigin()
-             .AllowAnyHeader()
-             .AllowAnyMethod();
+            Console.WriteLine("[🔒 CORS] Mode: Allow Any Origin");
+            p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
         }
         else
         {
-            var origins = corsOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                                     .Select(o => o.Trim())
-                                     .ToArray();
-
-            p.WithOrigins(origins)
-             .AllowAnyHeader()
-             .AllowAnyMethod()
-             .AllowCredentials();
+            var origins = corsOriginsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(o => o.Trim()).ToArray();
+            Console.WriteLine($"[🔒 CORS] Allowed: {string.Join(", ", origins)}");
+            p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
         }
     }));
 
-// Authentication Configuration
+// Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
 {
-    var validationParams = new TokenValidationParameters
+    options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = "LabAccessAPI",
-        ValidAudience = "LabAccessClient",
+        ValidIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "LabAccessAPI",
+        ValidAudience = builder.Configuration["JwtSettings:Audience"] ?? "LabAccessClient",
         IssuerSigningKey = new SymmetricSecurityKey(key),
-        NameClaimType = "name",
+        NameClaimType = "name", // Mapping claim standard
         RoleClaimType = "role",
-        ClockSkew = TimeSpan.Zero
+        ClockSkew = TimeSpan.Zero // Token langsung expired saat waktunya habis
     };
-
-    options.TokenValidationParameters = validationParams;
 
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
         {
-            var authHeader = context.Request.Headers["Authorization"].ToString();
-            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            // Support Auth lewat Query String (penting untuk SignalR WebSocket)
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
             {
-                var token = authHeader.Substring("Bearer ".Length).Trim();
-                try
-                {
-                    var handler = new JwtSecurityTokenHandler();
-                    var principal = handler.ValidateToken(token, validationParams, out var validatedToken);
-                    context.Principal = principal;
-                    context.Success();
-                    Console.WriteLine($"[🎉 MANUAL OVERRIDE] Token Valid! User: {principal.Identity?.Name}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[❌ MANUAL FAIL] Token ditolak: {ex.Message}");
-                }
+                context.Token = accessToken;
             }
             return Task.CompletedTask;
         },
         OnAuthenticationFailed = context =>
         {
-            Console.WriteLine($"[🔥 SYSTEM FAIL] Auth Failed: {context.Exception.Message}");
+            if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
+            {
+                // Tambahkan header khusus jika token expired
+                context.Response.Headers.Add("Token-Expired", "true");
+            }
             return Task.CompletedTask;
         }
     };
@@ -203,9 +206,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// ==========================================
+// APP PIPELINE
+// ==========================================
 var app = builder.Build();
-
-// HTTP Request Pipeline
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
@@ -214,7 +218,7 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-// Custom Middleware Stack
+// Middleware
 app.UseMiddleware<SignalRLoggingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseMiddleware<HybridSecurityMiddleware>();
@@ -227,10 +231,13 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHub<LogHub>("/hubs/log");
 
-app.MapGet("/", () => Results.Ok("API is Running 🚀"));
+app.MapGet("/", () => Results.Ok($"API Running 🚀 | Env: {app.Environment.EnvironmentName}"));
 
 await app.RunAsync();
 
+// ==========================================
+// BACKGROUND SERVICES
+// ==========================================
 public class DailyPingService : BackgroundService
 {
     private readonly IHttpClientFactory _httpClientFactory;
@@ -246,33 +253,32 @@ public class DailyPingService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("⏰ Anti-Sleep Service dimulai. Ping setiap 5 menit.");
+        _logger.LogInformation("⏰ Anti-Sleep Service Started.");
+
+        var targetUrl = _configuration["AppSettings:ApiUrl"] ?? "http://localhost:7860";
+
+        // Bersihkan URL dari trailing slash
+        targetUrl = targetUrl.TrimEnd('/');
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var client = _httpClientFactory.CreateClient();
-
-                var appUrl = "https://zreech-apiakses.hf.space";
-                var urls = _configuration["ASPNETCORE_URLS"];
-
-                if (!string.IsNullOrEmpty(urls))
-                {
-                    appUrl = urls.Split(';')[0].Replace("*", "localhost").Replace("+", "localhost");
-                }
-
-                _logger.LogInformation($"[🚀 KEEP-ALIVE] Ping ke {appUrl} ...");
-
-                // Gunakan timeout pendek agar tidak memblokir thread
                 client.Timeout = TimeSpan.FromSeconds(10);
-                var response = await client.GetAsync($"{appUrl}/", stoppingToken);
 
-                _logger.LogInformation($"[✅ KEEP-ALIVE] Status: {response.StatusCode}");
+                _logger.LogInformation($"[🚀 PING] Sending Keep-Alive to {targetUrl}...");
+
+                var response = await client.GetAsync($"{targetUrl}/", stoppingToken);
+
+                if (response.IsSuccessStatusCode)
+                    _logger.LogInformation($"[✅ PING SUCCESS] Status: {response.StatusCode}");
+                else
+                    _logger.LogWarning($"[⚠️ PING WARNING] Status: {response.StatusCode}");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"[⚠️ KEEP-ALIVE ERROR] {ex.Message}");
+                _logger.LogError($"[❌ PING FAILED] {ex.Message}");
             }
 
             await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);

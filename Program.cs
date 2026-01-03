@@ -253,35 +253,45 @@ public class DailyPingService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("⏰ Anti-Sleep Service Started.");
+        _logger.LogInformation("⏰ Anti-Sleep Service Menunggu Server Booting...");
 
-        var targetUrl = _configuration["AppSettings:ApiUrl"] ?? "http://localhost:7860";
+        await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
 
-        // Bersihkan URL dari trailing slash
+        var targetUrl = "http://localhost:5292"; // Default lokal
+
+        var configUrl = _configuration["PING_URL"] ?? _configuration["AppSettings:ApiUrl"];
+
+        if (!string.IsNullOrEmpty(configUrl))
+        {
+            targetUrl = configUrl;
+        }
+
         targetUrl = targetUrl.TrimEnd('/');
+
+        _logger.LogInformation($"⏰ Anti-Sleep Service Dimulai. Target: {targetUrl}");
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                client.Timeout = TimeSpan.FromSeconds(10);
+                client.Timeout = TimeSpan.FromSeconds(20);
 
-                _logger.LogInformation($"[🚀 PING] Sending Keep-Alive to {targetUrl}...");
+                _logger.LogInformation($"[🚀 PING] Mengirim sinyal ke {targetUrl}...");
 
                 var response = await client.GetAsync($"{targetUrl}/", stoppingToken);
 
                 if (response.IsSuccessStatusCode)
-                    _logger.LogInformation($"[✅ PING SUCCESS] Status: {response.StatusCode}");
+                    _logger.LogInformation($"[✅ PING SUKSES] {response.StatusCode}");
                 else
-                    _logger.LogWarning($"[⚠️ PING WARNING] Status: {response.StatusCode}");
+                    _logger.LogWarning($"[⚠️ PING WARNING] {response.StatusCode} - {response.ReasonPhrase}");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"[❌ PING FAILED] {ex.Message}");
+                _logger.LogError($"[❌ PING ERROR] Gagal menghubungi {targetUrl}: {ex.Message}");
             }
 
-            await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+            await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
         }
     }
 }

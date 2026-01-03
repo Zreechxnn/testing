@@ -50,7 +50,7 @@ if (string.IsNullOrEmpty(jwtSecretKey))
 }
 var key = Encoding.UTF8.GetBytes(jwtSecretKey);
 
-// SignalR Configuration (Fix Security)
+// SignalR Configuration
 builder.Services.AddSignalR(options =>
 {
     if (builder.Environment.IsDevelopment())
@@ -119,10 +119,10 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 
 // Setup Ping Service & HttpClient
 builder.Services.AddHttpClient();
-builder.Services.AddHostedService<DailyPingService>(); // <--- Versi Baru di Bawah
+builder.Services.AddHostedService<DailyPingService>(); 
 
 // CORS Configuration
-var corsOriginsRaw = builder.Configuration["CORS:Origins"]; // Baca dari Env/Json
+var corsOriginsRaw = builder.Configuration["CORS:Origins"]; 
 builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", p =>
     {
@@ -137,6 +137,7 @@ builder.Services.AddCors(options =>
         }
     }));
 
+// Authentication Configuration (MANUAL OVERRIDE - SESUAI REQUEST)
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
 {
@@ -160,6 +161,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     {
         OnMessageReceived = context =>
         {
+            // 1. Manual Check Header
             var authHeader = context.Request.Headers["Authorization"].ToString();
             if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
@@ -167,10 +169,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 try
                 {
                     var handler = new JwtSecurityTokenHandler();
-                    // Validasi manual
                     var principal = handler.ValidateToken(token, validationParams, out var validatedToken);
                     context.Principal = principal;
-                    context.Success(); // Force Success
+                    context.Success(); 
                     Console.WriteLine($"[🎉 MANUAL OVERRIDE] Token Valid! User: {principal.Identity?.Name}");
                 }
                 catch (Exception ex)
@@ -178,6 +179,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     Console.WriteLine($"[❌ MANUAL FAIL] Token ditolak: {ex.Message}");
                 }
             }
+            // 2. Manual Check Query String (Support SignalR)
             else
             {
                 var accessToken = context.Request.Query["access_token"];
@@ -225,7 +227,7 @@ app.MapGet("/", () => Results.Ok($"API Running 🚀 | Env: {app.Environment.Envi
 await app.RunAsync();
 
 // ==========================================
-// DAILY PING SERVICE (VERSI FIX)
+// DAILY PING SERVICE (SIMPLE PING_URL ONLY)
 // ==========================================
 public class DailyPingService : BackgroundService
 {
@@ -244,12 +246,20 @@ public class DailyPingService : BackgroundService
     {
         _logger.LogInformation("⏰ Anti-Sleep Service Menunggu Server Booting...");
 
+        // Delay 15 detik agar server siap dulu (Mencegah error Connection Refused)
         await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
 
+        // HANYA BACA PING_URL (Tanpa Fallback)
         var targetUrl = _configuration["PING_URL"];
 
-        targetUrl = targetUrl.TrimEnd('/');
+        // Safety: Jika PING_URL kosong, batalkan service agar tidak crash
+        if (string.IsNullOrEmpty(targetUrl))
+        {
+            _logger.LogWarning("⚠️ PING_URL tidak ditemukan di Environment! Anti-Sleep Service NON-AKTIF.");
+            return;
+        }
 
+        targetUrl = targetUrl.TrimEnd('/');
         _logger.LogInformation($"⏰ Anti-Sleep Service Dimulai. Target: {targetUrl}");
 
         while (!stoppingToken.IsCancellationRequested)
@@ -260,7 +270,6 @@ public class DailyPingService : BackgroundService
                 client.Timeout = TimeSpan.FromSeconds(20);
 
                 _logger.LogInformation($"[🚀 PING] Mengirim sinyal ke {targetUrl}...");
-
                 var response = await client.GetAsync($"{targetUrl}/", stoppingToken);
 
                 if (response.IsSuccessStatusCode)
@@ -273,7 +282,8 @@ public class DailyPingService : BackgroundService
                 _logger.LogError($"[❌ PING ERROR] Gagal menghubungi {targetUrl}: {ex.Message}");
             }
 
-            await Task.Delay(TimeSpan.FromMinutes(4), stoppingToken);
+            // Ping setiap 2 menit
+            await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
         }
     }
 }

@@ -5,7 +5,6 @@ using testing.Hubs;
 using testing.Models;
 using testing.Repositories;
 namespace testing.Services;
-
 public class AksesLogService : IAksesLogService
 {
     private readonly IAksesLogRepository _aksesLogRepository;

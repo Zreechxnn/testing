@@ -19,7 +19,6 @@ public class UserController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "admin")]
     public async Task<ActionResult<ApiResponse<List<UserDto>>>> GetAll()
     {
         var response = await _userService.GetAllUsers();
@@ -27,7 +26,6 @@ public class UserController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "admin")]
     public async Task<ActionResult<ApiResponse<UserDto>>> GetById(int id)
     {
         var response = await _userService.GetUserById(id);

@@ -19,7 +19,6 @@ public class KelasController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "admin,guru")]
     public async Task<ActionResult<ApiResponse<List<KelasDto>>>> GetAll()
     {
         var response = await _kelasService.GetAllKelas();
@@ -27,7 +26,6 @@ public class KelasController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "admin,guru")]
     public async Task<ActionResult<ApiResponse<KelasDto>>> GetById(int id)
     {
         var response = await _kelasService.GetKelasById(id);

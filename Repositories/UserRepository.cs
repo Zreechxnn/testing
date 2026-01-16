@@ -18,7 +18,7 @@ public class UserRepository : IUserRepository
         return await _context.Users
             .Include(u => u.Kartu)
         .Include(u => u.Kelas) // Include Kelas
-        .AsNoTracking()
+        // .AsNoTracking()
         .FirstOrDefaultAsync(u => u.Id == id);
     }
 

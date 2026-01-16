@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.EntityFrameworkCore; // WAJIB ADA untuk DbUpdateException
 
 namespace testing.Services;
 
@@ -15,158 +16,111 @@ public class UserService : IUserService
 {
     private readonly IUserRepository _userRepository;
     private readonly IKartuRepository _kartuRepository;
+    private readonly IKelasRepository _kelasRepository;
     private readonly IMapper _mapper;
     private readonly ILogger<UserService> _logger;
     private readonly IConfiguration _configuration;
-    private readonly IHubContext<LogHub> _hubContext; // TAMBAHKAN INI
+    private readonly IHubContext<LogHub> _hubContext;
 
-    // JWT Settings
     private readonly string _jwtSecretKey;
     private readonly string _jwtIssuer;
     private readonly string _jwtAudience;
     private readonly int _jwtExpireMinutes;
 
     public UserService(
-       IUserRepository userRepository,
-       IKartuRepository kartuRepository,
-       IMapper mapper,
-       ILogger<UserService> logger,
-       IConfiguration configuration,
-       IHubContext<LogHub> hubContext) // TAMBAHKAN PARAMETER
+        IUserRepository userRepository,
+        IKartuRepository kartuRepository,
+        IKelasRepository kelasRepository,
+        IMapper mapper,
+        ILogger<UserService> logger,
+        IConfiguration configuration,
+        IHubContext<LogHub> hubContext)
     {
         _userRepository = userRepository;
         _kartuRepository = kartuRepository;
+        _kelasRepository = kelasRepository;
         _mapper = mapper;
         _logger = logger;
         _configuration = configuration;
-        _hubContext = hubContext; // ASSIGN
+        _hubContext = hubContext;
 
-        // Load JWT settings dari environment variables
         _jwtSecretKey = Environment.GetEnvironmentVariable("JwtSettings__SecretKey")
                         ?? configuration["JwtSettings:SecretKey"]
-                        ?? throw new InvalidOperationException("JWT SecretKey tidak ditemukan!");
+                        ?? throw new InvalidOperationException("JWT SecretKey not found!");
 
-        _jwtIssuer = Environment.GetEnvironmentVariable("JwtSettings__Issuer")
-                    ?? configuration["JwtSettings:Issuer"]
-                    ?? "LabAccessAPI";
-
-        _jwtAudience = Environment.GetEnvironmentVariable("JwtSettings__Audience")
-                      ?? configuration["JwtSettings:Audience"]
-                      ?? "LabAccessClient";
-
-        _jwtExpireMinutes = int.Parse(Environment.GetEnvironmentVariable("JwtSettings__ExpireMinutes")
-                                    ?? configuration["JwtSettings:ExpireMinutes"]
-                                    ?? "1440");
-
-        _logger.LogInformation("JWT Settings loaded - Issuer: {Issuer}, Audience: {Audience}, Expire: {ExpireMinutes}m",
-            _jwtIssuer, _jwtAudience, _jwtExpireMinutes);
+        _jwtIssuer = configuration["JwtSettings:Issuer"] ?? "LabAccessAPI";
+        _jwtAudience = configuration["JwtSettings:Audience"] ?? "LabAccessClient";
+        _jwtExpireMinutes = int.Parse(configuration["JwtSettings:ExpireMinutes"] ?? "1440");
     }
 
     public async Task<ApiResponse<List<UserDto>>> GetAllUsers()
     {
-        try
-        {
-            var users = await _userRepository.GetAllAsync();
-            var userDtos = _mapper.Map<List<UserDto>>(users);
-            return ApiResponse<List<UserDto>>.SuccessResult(userDtos);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving all users");
-            return ApiResponse<List<UserDto>>.ErrorResult("Gagal mengambil data user");
-        }
+        var users = await _userRepository.GetAllAsync();
+        return ApiResponse<List<UserDto>>.SuccessResult(_mapper.Map<List<UserDto>>(users));
     }
 
     public async Task<ApiResponse<PagedResponse<UserDto>>> GetUsersPaged(PagedRequest request)
     {
-        try
-        {
-            if (!request.IsValid())
-            {
-                return ApiResponse<PagedResponse<UserDto>>.ErrorResult("Parameter pagination tidak valid");
-            }
+        if (!request.IsValid()) return ApiResponse<PagedResponse<UserDto>>.ErrorResult("Invalid pagination");
 
-            var users = await _userRepository.GetPagedAsync(request.Page, request.PageSize);
-            var totalCount = await _userRepository.CountAsync();
+        var users = await _userRepository.GetPagedAsync(request.Page, request.PageSize);
+        var totalCount = await _userRepository.CountAsync();
 
-            var userDtos = _mapper.Map<List<UserDto>>(users);
-            var pagedResponse = new PagedResponse<UserDto>(
-                userDtos,
-                request.Page,
-                request.PageSize,
-                totalCount
-            );
-
-            return ApiResponse<PagedResponse<UserDto>>.SuccessResult(pagedResponse);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving paged users");
-            return ApiResponse<PagedResponse<UserDto>>.ErrorResult("Gagal mengambil data user");
-        }
+        var dtos = _mapper.Map<List<UserDto>>(users);
+        return ApiResponse<PagedResponse<UserDto>>.SuccessResult(new PagedResponse<UserDto>(dtos, request.Page, request.PageSize, totalCount));
     }
 
     public async Task<ApiResponse<UserDto>> GetUserById(int id)
     {
-        try
-        {
-            var user = await _userRepository.GetByIdAsync(id);
-            if (user == null)
-            {
-                return ApiResponse<UserDto>.ErrorResult("User tidak ditemukan");
-            }
-
-            var userDto = _mapper.Map<UserDto>(user);
-            return ApiResponse<UserDto>.SuccessResult(userDto);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving user by id: {Id}", id);
-            return ApiResponse<UserDto>.ErrorResult("Gagal mengambil data user");
-        }
+        var user = await _userRepository.GetByIdAsync(id);
+        return user == null
+            ? ApiResponse<UserDto>.ErrorResult("User tidak ditemukan")
+            : ApiResponse<UserDto>.SuccessResult(_mapper.Map<UserDto>(user));
     }
 
     public async Task<ApiResponse<UserDto>> CreateUser(UserCreateRequest request)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(request.Username))
-                return ApiResponse<UserDto>.ErrorResult("Username harus diisi");
-            if (string.IsNullOrWhiteSpace(request.Password))
-                return ApiResponse<UserDto>.ErrorResult("Password harus diisi");
-            if (string.IsNullOrWhiteSpace(request.Role))
-                return ApiResponse<UserDto>.ErrorResult("Role harus diisi");
-
-            var existingUser = await _userRepository.GetByUsernameAsync(request.Username);
-            if (existingUser != null)
+            if (await _userRepository.IsUsernameExistAsync(request.Username))
                 return ApiResponse<UserDto>.ErrorResult("Username sudah digunakan");
 
-            var passwordHash = HashPassword(request.Password);
             var user = _mapper.Map<User>(request);
-            user.PasswordHash = passwordHash;
+            user.PasswordHash = HashPassword(request.Password);
+
+            // Handle Kelas (Create New List)
+            if (request.KelasId.HasValue && request.KelasId > 0)
+            {
+                var kelasExists = await _kelasRepository.GetByIdAsync(request.KelasId.Value);
+                if (kelasExists == null) return ApiResponse<UserDto>.ErrorResult("Kelas tidak valid");
+
+                user.AnggotaKelas = new List<AnggotaKelas>
+                {
+                    new AnggotaKelas { KelasId = request.KelasId.Value }
+                };
+            }
 
             await _userRepository.AddAsync(user);
-            var saved = await _userRepository.SaveAsync();
+            await _userRepository.SaveAsync();
 
-            if (!saved) return ApiResponse<UserDto>.ErrorResult("Gagal menyimpan user");
+            var createdDto = _mapper.Map<UserDto>(user);
+            // Patch nama kelas untuk response
+            if (user.AnggotaKelas != null && user.AnggotaKelas.Any())
+                createdDto.KelasNama = (await _kelasRepository.GetByIdAsync(request.KelasId!.Value))?.Nama;
 
-            var createdUser = await _userRepository.GetByIdAsync(user.Id);
-            var userDto = _mapper.Map<UserDto>(createdUser!);
-
-            _logger.LogInformation("User created: {Username}", user.Username);
-
-            // TAMBAHKAN NOTIFIKASI SIGNALR
-            await SendUserNotification("USER_CREATED", userDto);
-
-            return ApiResponse<UserDto>.SuccessResult(userDto, "User berhasil dibuat");
+            await SendUserNotification("USER_CREATED", createdDto);
+            return ApiResponse<UserDto>.SuccessResult(createdDto, "User berhasil dibuat");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error creating user: {Username}", request.Username);
+            _logger.LogError(ex, "Create user failed");
             return ApiResponse<UserDto>.ErrorResult("Gagal membuat user");
         }
     }
 
+    // ==========================================
+    // BAGIAN INI YANG DIPERBAIKI (ANTI CRASH)
+    // ==========================================
     public async Task<ApiResponse<UserDto>> UpdateUser(int id, UserUpdateRequest request)
     {
         try
@@ -174,38 +128,62 @@ public class UserService : IUserService
             var user = await _userRepository.GetByIdAsync(id);
             if (user == null) return ApiResponse<UserDto>.ErrorResult("User tidak ditemukan");
 
-            if (string.IsNullOrWhiteSpace(request.Username))
-                return ApiResponse<UserDto>.ErrorResult("Username harus diisi");
-            if (string.IsNullOrWhiteSpace(request.Role))
-                return ApiResponse<UserDto>.ErrorResult("Role harus diisi");
-
-            var existingUser = await _userRepository.GetByUsernameAsync(request.Username);
-            if (existingUser != null && existingUser.Id != id)
+            if (request.Username != user.Username && await _userRepository.IsUsernameExistAsync(request.Username))
                 return ApiResponse<UserDto>.ErrorResult("Username sudah digunakan");
 
-            _mapper.Map(request, user);
+            user.Username = request.Username;
+            user.Role = request.Role;
 
             if (!string.IsNullOrWhiteSpace(request.Password))
-            {
                 user.PasswordHash = HashPassword(request.Password);
+
+            // --- LOGIKA UPDATE KELAS AMAN ---
+            if (request.KelasId.HasValue && request.KelasId > 0)
+            {
+                // 1. Cek Kelas Valid
+                var kelasExists = await _kelasRepository.GetByIdAsync(request.KelasId.Value);
+                if (kelasExists == null) return ApiResponse<UserDto>.ErrorResult("Kelas tidak valid");
+
+                // 2. Init List jika null
+                if (user.AnggotaKelas == null) user.AnggotaKelas = new List<AnggotaKelas>();
+
+                // 3. Cek Duplikasi di Memory (Untuk Efisiensi)
+                bool alreadyExists = user.AnggotaKelas.Any(ak => ak.KelasId == request.KelasId.Value);
+
+                if (!alreadyExists)
+                {
+                    user.AnggotaKelas.Add(new AnggotaKelas { UserId = user.Id, KelasId = request.KelasId.Value });
+                }
             }
 
             _userRepository.Update(user);
-            var saved = await _userRepository.SaveAsync();
 
-            if (!saved) return ApiResponse<UserDto>.ErrorResult("Gagal mengupdate user");
+            // 4. Try-Catch Database Constraint (Safety Net Terakhir)
+            try
+            {
+                await _userRepository.SaveAsync();
+            }
+            catch (DbUpdateException dbEx)
+            {
+                _logger.LogWarning(dbEx, "Database concurrency/constraint issue during update user {Id}. Assuming success if duplicates.", id);
+                // Jika errornya karena duplicate key, kita anggap sukses (karena tujuannya user masuk kelas tsb)
+                // Jika bukan, lempar error
+                if (dbEx.InnerException != null && !dbEx.InnerException.Message.Contains("unique"))
+                {
+                    throw;
+                }
+            }
 
+            // Refresh data untuk response
             var updatedUser = await _userRepository.GetByIdAsync(id);
             var userDto = _mapper.Map<UserDto>(updatedUser!);
 
-            // TAMBAHKAN NOTIFIKASI SIGNALR
             await SendUserNotification("USER_UPDATED", userDto);
-
             return ApiResponse<UserDto>.SuccessResult(userDto, "User berhasil diupdate");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating user: {Id}", id);
+            _logger.LogError(ex, "Update user failed: {Id}", id);
             return ApiResponse<UserDto>.ErrorResult("Gagal mengupdate user");
         }
     }
@@ -218,149 +196,66 @@ public class UserService : IUserService
             if (user == null) return ApiResponse<object>.ErrorResult("User tidak ditemukan");
 
             if (user.Kartu != null && user.Kartu.Any())
-                return ApiResponse<object>.ErrorResult("Tidak dapat menghapus user karena memiliki kartu terdaftar");
+                return ApiResponse<object>.ErrorResult("Hapus kartu user terlebih dahulu");
 
-            if (user.Role == "admin")
-            {
-                var adminCount = await _userRepository.CountAdminsAsync();
-                if (adminCount <= 1)
-                    return ApiResponse<object>.ErrorResult("Tidak dapat menghapus admin terakhir");
-            }
+            if (user.Role == "admin" && await _userRepository.CountAdminsAsync() <= 1)
+                return ApiResponse<object>.ErrorResult("Tidak dapat menghapus admin terakhir");
 
-            // Simpan data untuk notifikasi
-            var userDto = new UserDto
-            {
-                Id = user.Id,
-                Username = user.Username,
-                Role = user.Role
-            };
+            var dto = new UserDto { Id = user.Id, Username = user.Username, Role = user.Role };
 
             _userRepository.Remove(user);
-            var saved = await _userRepository.SaveAsync();
+            await _userRepository.SaveAsync();
 
-            if (!saved) return ApiResponse<object>.ErrorResult("Gagal menghapus user");
+            await SendUserNotification("USER_DELETED", dto);
 
-            _logger.LogInformation("User deleted: {Id} - {Username}", user.Id, user.Username);
-
-            // TAMBAHKAN NOTIFIKASI SIGNALR
-            await SendUserNotification("USER_DELETED", userDto);
-
-            return ApiResponse<object>.SuccessResult(null!, "User berhasil dihapus");
+            // Fix: Return object kosong {} bukan null
+            return ApiResponse<object>.SuccessResult(new { }, "User berhasil dihapus");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deleting user: {Id}", id);
+            _logger.LogError(ex, "Delete user failed");
             return ApiResponse<object>.ErrorResult("Gagal menghapus user");
         }
     }
 
     public async Task<ApiResponse<List<UserDto>>> GetUsersWithoutKartu()
     {
-        try
-        {
-            var users = await _userRepository.GetUsersWithoutKartuAsync();
-            var userDtos = _mapper.Map<List<UserDto>>(users);
-            return ApiResponse<List<UserDto>>.SuccessResult(userDtos, "Berhasil mengambil user tanpa kartu");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting users without kartu");
-            return ApiResponse<List<UserDto>>.ErrorResult("Gagal mengambil user tanpa kartu");
-        }
+        var users = await _userRepository.GetUsersWithoutKartuAsync();
+        return ApiResponse<List<UserDto>>.SuccessResult(_mapper.Map<List<UserDto>>(users));
     }
 
-    // Helper methods
-    private string HashPassword(string password)
-    {
-        return BCrypt.Net.BCrypt.HashPassword(password);
-    }
-
-    private bool VerifyPassword(string password, string passwordHash)
-    {
-        return BCrypt.Net.BCrypt.Verify(password, passwordHash);
-    }
+    // --- Helpers ---
+    private string HashPassword(string p) => BCrypt.Net.BCrypt.HashPassword(p);
 
     private string GenerateJwtToken(User user)
     {
-        try
-        {
-            _logger.LogInformation("Generating JWT token for user: {Username}, Role: {Role}", user.Username, user.Role);
-
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.UTF8.GetBytes(_jwtSecretKey);
-
-            // string literal ("id", "role") 
-            var claims = new[]
-            {
-                new Claim("id", user.Id.ToString()),
-                new Claim("name", user.Username),
-                new Claim("role", user.Role), // Lowercase 'role'
-
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-            };
-
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(claims),
-                // [PENTING] Tambahkan buffer mundur 1 menit untuk sinkronisasi waktu server
-                NotBefore = DateTime.UtcNow.AddMinutes(-1),
-                Expires = DateTime.UtcNow.AddMinutes(_jwtExpireMinutes),
-                IssuedAt = DateTime.UtcNow,
-                Issuer = _jwtIssuer,
-                Audience = _jwtAudience,
-                SigningCredentials = new SigningCredentials(
-                    new SymmetricSecurityKey(key),
-                    SecurityAlgorithms.HmacSha256Signature)
-            };
-
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            var tokenString = tokenHandler.WriteToken(token);
-
-            return tokenString;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error generating JWT token for user {Username}", user.Username);
-            throw new Exception($"Gagal generate token: {ex.Message}");
-        }
-    }
-
-    // METHOD BARU: Helper untuk mengirim notifikasi SignalR
-    private async Task SendUserNotification(string eventType, UserDto userDto, string customMessage = null)
-    {
-        try
-        {
-            var notification = new
-            {
-                EventId = Guid.NewGuid(),
-                EventType = eventType,
-                Timestamp = DateTime.UtcNow,
-                Data = userDto,
-                Message = customMessage ?? $"User {userDto.Username} telah {GetEventAction(eventType)}"
-            };
-
-            // Kirim ke semua client yang terhubung
-            await _hubContext.Clients.All.SendAsync("UserNotification", notification);
-
-            // Kirim ke grup admin untuk logging sistem
-            await _hubContext.Clients.Group("admin").SendAsync("SystemNotification", notification);
-
-            _logger.LogDebug($"SignalR notification sent for {eventType}: {userDto.Username}");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, $"Failed to send SignalR notification for {eventType}");
-        }
-    }
-
-    private string GetEventAction(string eventType)
-    {
-        return eventType switch
-        {
-            "USER_CREATED" => "dibuat",
-            "USER_UPDATED" => "diperbarui",
-            "USER_DELETED" => "dihapus",
-            _ => "diubah"
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var key = Encoding.UTF8.GetBytes(_jwtSecretKey);
+        var claims = new[] {
+            new Claim("id", user.Id.ToString()),
+            new Claim("name", user.Username),
+            new Claim("role", user.Role),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+        var tokenDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(claims),
+            NotBefore = DateTime.UtcNow.AddMinutes(-1),
+            Expires = DateTime.UtcNow.AddMinutes(_jwtExpireMinutes),
+            IssuedAt = DateTime.UtcNow,
+            Issuer = _jwtIssuer,
+            Audience = _jwtAudience,
+            SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+        };
+        return tokenHandler.WriteToken(tokenHandler.CreateToken(tokenDescriptor));
+    }
+
+    private async Task SendUserNotification(string type, UserDto data)
+    {
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("UserNotification", new { EventId = Guid.NewGuid(), EventType = type, Timestamp = DateTime.UtcNow, Data = data });
+        }
+        catch { /* Ignore Hub Error */ }
     }
 }

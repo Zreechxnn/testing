@@ -5,6 +5,8 @@ public class UserCreateRequest
     public required string Username { get; set; }
     public required string Password { get; set; }
     public required string Role { get; set; }
+
+    public int? KelasId { get; set; }
 }
 
 public class UserUpdateRequest
@@ -12,12 +14,15 @@ public class UserUpdateRequest
     public required string Username { get; set; }
     public string? Password { get; set; }
     public required string Role { get; set; }
+    public int? KelasId { get; set; }
 }
 
 public class UserLoginRequest
 {
     public required string Username { get; set; }
     public required string Password { get; set; }
+
+    public int PeriodeId { get; set; }
 }
 
 public class UserLoginResponse
@@ -26,6 +31,9 @@ public class UserLoginResponse
     public required string Username { get; set; }
     public required string Role { get; set; }
     public required string Token { get; set; }
+
+    public int? KelasId { get; set; }
+    public string? NamaKelas { get; set; }
 }
 
 public class UserDto
@@ -36,4 +44,15 @@ public class UserDto
     public DateTime CreatedAt { get; set; }
     public string? KartuUid { get; set; }
     public int? KartuId { get; set; }
+    public int? KelasId { get; set; }
+    public string? KelasNama { get; set; }
+    public List<UserKelasInfo>? RiwayatKelas { get; set; }
+}
+
+public class UserKelasInfo
+{
+    public int KelasId { get; set; }
+    public string NamaKelas { get; set; } = string.Empty;
+    public string NamaPeriode { get; set; } = string.Empty;
+    public bool IsPeriodeAktif { get; set; }
 }

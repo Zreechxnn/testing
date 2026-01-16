@@ -16,7 +16,11 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByIdAsync(int id)
     {
         return await _context.Users
-            .Include(u => u.Kartu)  // Include kartu yang dimiliki user
+            .Include(u => u.Kartu)
+            // REVISI: Ambil Kelas via AnggotaKelas
+            .Include(u => u.AnggotaKelas!)
+                .ThenInclude(ak => ak.Kelas)
+                    .ThenInclude(k => k!.Periode) // Opsional: jika butuh nama periode
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == id);
     }
@@ -24,16 +28,22 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByUsernameAsync(string username)
     {
         return await _context.Users
-            .Include(u => u.Kartu)  // Include kartu yang dimiliki user
+            .Include(u => u.Kartu)
+            // REVISI
+            .Include(u => u.AnggotaKelas!)
+                .ThenInclude(ak => ak.Kelas)
+                    .ThenInclude(k => k!.Periode)
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Username.ToLower() == username.ToLower());
     }
 
     public async Task<User?> GetByKartuUidAsync(string kartuUid)
     {
-        // Sekarang mencari melalui relasi Kartu
         return await _context.Users
             .Include(u => u.Kartu)
+            // REVISI (Opsional jika butuh data kelas saat scan)
+            .Include(u => u.AnggotaKelas!)
+                .ThenInclude(ak => ak.Kelas)
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Kartu != null && u.Kartu.Any(k => k.Uid == kartuUid));
     }
@@ -41,7 +51,10 @@ public class UserRepository : IUserRepository
     public async Task<IEnumerable<User>> GetAllAsync()
     {
         return await _context.Users
-            .Include(u => u.Kartu)  // Include kartu yang dimiliki user
+            .Include(u => u.Kartu)
+            // REVISI
+            .Include(u => u.AnggotaKelas!)
+                .ThenInclude(ak => ak.Kelas)
             .AsNoTracking()
             .OrderBy(u => u.Username)
             .ToListAsync();
@@ -51,6 +64,9 @@ public class UserRepository : IUserRepository
     {
         return await _context.Users
             .Include(u => u.Kartu)
+            // REVISI
+            .Include(u => u.AnggotaKelas!)
+                .ThenInclude(ak => ak.Kelas)
             .AsNoTracking()
             .OrderBy(u => u.Username)
             .Skip((page - 1) * pageSize)
@@ -58,53 +74,22 @@ public class UserRepository : IUserRepository
             .ToListAsync();
     }
 
+    // --- BAGIAN INI TIDAK BERUBAH ---
     public async Task<bool> IsUsernameExistAsync(string username, int? excludeId = null)
     {
         return await _context.Users
             .AnyAsync(u => u.Username.ToLower() == username.ToLower() && (excludeId == null || u.Id != excludeId));
     }
 
-    // Hapus method IsKartuUidExistAsync karena sekarang relasi ada di tabel Kartu
-    // public async Task<bool> IsKartuUidExistAsync(string kartuUid, int? excludeId = null)
+    public async Task AddAsync(User user) => await _context.Users.AddAsync(user);
+    public void Update(User user) => _context.Users.Update(user);
+    public void Remove(User user) => _context.Users.Remove(user);
+    public async Task<int> CountAsync() => await _context.Users.CountAsync();
 
-    public async Task AddAsync(User user)
-    {
-        await _context.Users.AddAsync(user);
-    }
+    public async Task<int> CountAdminsAsync() => await _context.Users.CountAsync(u => u.Role == "admin");
+    public async Task<int> CountByRoleAsync(string role) => await _context.Users.CountAsync(u => u.Role == role);
+    public async Task<bool> SaveAsync() => await _context.SaveChangesAsync() > 0;
 
-    public void Update(User user)
-    {
-        _context.Users.Update(user);
-    }
-
-    public void Remove(User user)
-    {
-        _context.Users.Remove(user);
-    }
-
-    public async Task<int> CountAsync()
-    {
-        return await _context.Users.CountAsync();
-    }
-
-    public async Task<int> CountAdminsAsync()
-    {
-        return await _context.Users
-            .CountAsync(u => u.Role == "admin");
-    }
-
-    public async Task<int> CountByRoleAsync(string role)
-    {
-        return await _context.Users
-            .CountAsync(u => u.Role == role);
-    }
-
-    public async Task<bool> SaveAsync()
-    {
-        return await _context.SaveChangesAsync() > 0;
-    }
-
-    // Method baru untuk mendapatkan user dengan kartu tertentu
     public async Task<User?> GetUserWithKartuByUidAsync(string kartuUid)
     {
         return await _context.Users
@@ -112,6 +97,7 @@ public class UserRepository : IUserRepository
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Kartu != null && u.Kartu.Any(k => k.Uid == kartuUid));
     }
+
     public async Task<IEnumerable<User>> GetUsersWithoutKartuAsync()
     {
         return await _context.Users

@@ -29,10 +29,13 @@ public class KelasRepository : IKelasRepository
             .ToListAsync();
     }
 
-    public async Task<bool> IsNamaExistAsync(string nama, int? excludeId = null)
+    // Ubah method IsNamaExistAsync
+    public async Task<bool> IsNamaExistAsync(string nama, int periodeId, int? excludeId = null)
     {
         return await _context.Kelas
-            .AnyAsync(k => k.Nama.ToLower() == nama.ToLower() && (excludeId == null || k.Id != excludeId));
+            .AnyAsync(k => k.Nama.ToLower() == nama.ToLower()
+                       && k.PeriodeId == periodeId // Cek Periode juga
+                       && (excludeId == null || k.Id != excludeId));
     }
 
     public async Task AddAsync(Kelas kelas)

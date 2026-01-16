@@ -11,20 +11,23 @@ namespace testing.Services;
 public class KelasService : IKelasService
 {
     private readonly IKelasRepository _kelasRepository;
-    private readonly IPeriodeRepository _periodeRepository; // Inject Repo Periode
+    private readonly IPeriodeRepository _periodeRepository;
+    private readonly IAksesLogRepository _aksesLogRepository; // TAMBAHAN: Untuk stats real
     private readonly IMapper _mapper;
     private readonly ILogger<KelasService> _logger;
     private readonly IHubContext<LogHub> _hubContext;
 
     public KelasService(
         IKelasRepository kelasRepository,
-        IPeriodeRepository periodeRepository, // Inject di Constructor
+        IPeriodeRepository periodeRepository,
+        IAksesLogRepository aksesLogRepository, // Inject
         IMapper mapper,
         ILogger<KelasService> logger,
         IHubContext<LogHub> hubContext)
     {
         _kelasRepository = kelasRepository;
-        _periodeRepository = periodeRepository; // Assign
+        _periodeRepository = periodeRepository;
+        _aksesLogRepository = aksesLogRepository;
         _mapper = mapper;
         _logger = logger;
         _hubContext = hubContext;
@@ -75,11 +78,11 @@ public class KelasService : IKelasService
                 return ApiResponse<KelasDto>.ErrorResult("Nama kelas harus diisi");
             }
 
-            // 2. Validasi Nama Duplikat
-            var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama);
+            // 2. Validasi Nama Duplikat (Scoped per Periode)
+            var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama, request.PeriodeId);
             if (existingKelas)
             {
-                return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar");
+                return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar di periode ini");
             }
 
             // 3. Validasi Periode (Wajib Ada)
@@ -91,9 +94,7 @@ public class KelasService : IKelasService
 
             // 4. Mapping & Save
             var kelas = _mapper.Map<Kelas>(request);
-
-            // Pastikan PeriodeId terisi (Backup jika mapper gagal)
-            kelas.PeriodeId = request.PeriodeId;
+            kelas.PeriodeId = request.PeriodeId; // Pastikan ter-set
 
             await _kelasRepository.AddAsync(kelas);
             var saved = await _kelasRepository.SaveAsync();
@@ -107,7 +108,7 @@ public class KelasService : IKelasService
 
             // 5. Return Data & SignalR
             var kelasDto = _mapper.Map<KelasDto>(kelas);
-            kelasDto.PeriodeNama = periodeExist.Nama; // Isi manual nama periode
+            kelasDto.PeriodeNama = periodeExist.Nama;
 
             await SendKelasNotification("KELAS_CREATED", kelasDto, $"Kelas baru '{kelas.Nama}' berhasil ditambahkan");
 
@@ -137,8 +138,8 @@ public class KelasService : IKelasService
                 return ApiResponse<KelasDto>.ErrorResult("Nama kelas harus diisi");
             }
 
-            // 3. Validasi Duplikat Nama
-            var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama, id);
+            // 3. Validasi Duplikat Nama (Exclude ID sendiri)
+            var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama, request.PeriodeId, id);
             if (existingKelas)
             {
                 return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar");
@@ -153,7 +154,7 @@ public class KelasService : IKelasService
 
             var namaLama = kelas.Nama;
 
-            // 5. Update data secara eksplisit
+            // 5. Update data
             kelas.Nama = request.Nama.Trim();
             kelas.PeriodeId = request.PeriodeId;
 
@@ -175,11 +176,6 @@ public class KelasService : IKelasService
                 $"Kelas '{namaLama}' berhasil diupdate menjadi '{kelas.Nama}'");
 
             return ApiResponse<KelasDto>.SuccessResult(kelasDto, "Kelas berhasil diupdate");
-        }
-        catch (DbUpdateException dbEx)
-        {
-            _logger.LogError(dbEx, "Database error updating kelas: {Id}", id);
-            return ApiResponse<KelasDto>.ErrorResult($"Database error: {dbEx.InnerException?.Message ?? dbEx.Message}");
         }
         catch (Exception ex)
         {
@@ -233,12 +229,15 @@ public class KelasService : IKelasService
                 return ApiResponse<KelasStatsDto>.ErrorResult("Kelas tidak ditemukan");
             }
 
-            // Statistik dummy/placeholder (implementasi real butuh query ke log akses)
+            // MENGGUNAKAN AKSES LOG REPO UNTUK DATA REAL
+            var totalAkses = await _aksesLogRepository.CountByKelasIdAsync(id);
+            var aktifSekarang = await _aksesLogRepository.CountActiveByKelasIdAsync(id);
+
             var stats = new KelasStatsDto
             {
                 Kelas = kelas.Nama,
-                TotalAkses = 0,
-                AktifSekarang = 0
+                TotalAkses = totalAkses,
+                AktifSekarang = aktifSekarang
             };
 
             return ApiResponse<KelasStatsDto>.SuccessResult(stats);
@@ -252,8 +251,17 @@ public class KelasService : IKelasService
 
     public async Task<ApiResponse<List<KelasDto>>> GetKelasByPeriode(int periodeId)
     {
-        var data = await _kelasRepository.GetByPeriodeAsync(periodeId);
-        return ApiResponse<List<KelasDto>>.SuccessResult(_mapper.Map<List<KelasDto>>(data));
+        try
+        {
+            var data = await _kelasRepository.GetByPeriodeAsync(periodeId);
+            var dtos = _mapper.Map<List<KelasDto>>(data);
+            return ApiResponse<List<KelasDto>>.SuccessResult(dtos);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting kelas by periode: {Id}", periodeId);
+            return ApiResponse<List<KelasDto>>.ErrorResult("Gagal mengambil data kelas berdasarkan periode");
+        }
     }
 
     private async Task SendKelasNotification(string eventType, KelasDto kelasDto, string customMessage = null)

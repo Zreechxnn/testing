@@ -12,12 +12,12 @@ namespace testing.Data
         public DbSet<User> Users => Set<User>();
         public DbSet<Ruangan> Ruangan => Set<Ruangan>();
         public DbSet<AksesLog> AksesLog => Set<AksesLog>();
-        // 1. TAMBAHKAN DBSET PERIODE
         public DbSet<Periode> Periode => Set<Periode>();
+
+        public DbSet<AnggotaKelas> AnggotaKelas => Set<AnggotaKelas>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            // Konfigurasi Periode
             modelBuilder.Entity<Periode>(entity =>
             {
                 entity.HasKey(p => p.Id);
@@ -25,29 +25,38 @@ namespace testing.Data
                 entity.Property(p => p.IsAktif).HasDefaultValue(false);
             });
 
-            // Konfigurasi Kelas
             modelBuilder.Entity<Kelas>(entity =>
             {
                 entity.HasKey(k => k.Id);
 
-                // 2. TAMBAHKAN RELASI KELAS -> PERIODE
                 entity.HasOne(k => k.Periode)
                     .WithMany(p => p.Kelas)
                     .HasForeignKey(k => k.PeriodeId)
-                    .OnDelete(DeleteBehavior.Restrict); // Mencegah hapus periode jika masih ada kelas
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
-            // Konfigurasi Kartu
+            modelBuilder.Entity<AnggotaKelas>(entity =>
+            {
+                entity.HasKey(ak => ak.Id);
+
+                entity.HasIndex(ak => new { ak.UserId, ak.KelasId }).IsUnique();
+
+                entity.HasOne(ak => ak.User)
+                    .WithMany(u => u.AnggotaKelas)
+                    .HasForeignKey(ak => ak.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(ak => ak.Kelas)
+                    .WithMany(k => k.AnggotaKelas)
+                    .HasForeignKey(ak => ak.KelasId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
             modelBuilder.Entity<Kartu>(entity =>
             {
-                entity.Property(k => k.CreatedAt)
-                    .HasDefaultValueSql("NOW()");
-
-                entity.Property(k => k.Status)
-                    .HasDefaultValue("AKTIF");
-
-                entity.HasIndex(k => k.Uid)
-                    .IsUnique();
+                entity.Property(k => k.CreatedAt).HasDefaultValueSql("NOW()");
+                entity.Property(k => k.Status).HasDefaultValue("AKTIF");
+                entity.HasIndex(k => k.Uid).IsUnique();
 
                 entity.HasOne(k => k.User)
                     .WithMany(u => u.Kartu)
@@ -60,21 +69,15 @@ namespace testing.Data
                     .OnDelete(DeleteBehavior.SetNull);
             });
 
-            // Konfigurasi User
             modelBuilder.Entity<User>(entity =>
             {
-                entity.Property(u => u.CreatedAt)
-                    .HasDefaultValueSql("NOW()");
-
-                entity.HasIndex(u => u.Username)
-                    .IsUnique();
+                entity.Property(u => u.CreatedAt).HasDefaultValueSql("NOW()");
+                entity.HasIndex(u => u.Username).IsUnique();
             });
 
-            // Konfigurasi AksesLog
             modelBuilder.Entity<AksesLog>(entity =>
             {
-                entity.Property(a => a.TimestampMasuk)
-                    .HasDefaultValueSql("NOW()");
+                entity.Property(a => a.TimestampMasuk).HasDefaultValueSql("NOW()");
 
                 entity.HasOne(a => a.Kartu)
                     .WithMany(k => k.AksesLogs)

@@ -8,5 +8,6 @@ namespace testing.Models
 
         public virtual Periode? Periode { get; set; }
         public virtual ICollection<Kartu>? Kartu { get; set; }
+        public virtual ICollection<AnggotaKelas>? AnggotaKelas { get; set; }
     }
 }

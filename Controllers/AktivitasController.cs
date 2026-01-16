@@ -22,7 +22,7 @@ public class AktivitasController : ControllerBase
 
     // Dari AksesLogController
     [HttpGet]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<List<AksesLogDto>>>> GetAll()
     {
         var response = await _aksesLogService.GetAllAksesLog();
@@ -30,7 +30,7 @@ public class AktivitasController : ControllerBase
     }
 
     [HttpGet("paged")]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<PagedResponse<AksesLogDto>>>> GetPaged([FromQuery] PagedRequest request)
     {
         var response = await _aksesLogService.GetAksesLogPaged(request);
@@ -38,7 +38,7 @@ public class AktivitasController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<AksesLogDto>>> GetById(int id)
     {
         var response = await _aksesLogService.GetAksesLogById(id);

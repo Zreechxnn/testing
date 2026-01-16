@@ -6,7 +6,7 @@ public interface IKelasRepository
 {
     Task<Kelas?> GetByIdAsync(int id);
     Task<IEnumerable<Kelas>> GetAllAsync();
-    Task<bool> IsNamaExistAsync(string nama, int? excludeId = null);
+    Task<bool> IsNamaExistAsync(string nama, int periodeId, int? excludeId = null);
     Task AddAsync(Kelas kelas);
     void Update(Kelas kelas);
     void Remove(Kelas kelas);

@@ -12,8 +12,16 @@ public class AksesLogDto
     public string? KartuUid { get; set; }
     public string? RuanganNama { get; set; }
     public string? UserUsername { get; set; }
-    public string? KelasNama { get; set; }
+    
+    // --- Update Mulai ---
+    public int? KelasId { get; set; }      // ID Kelas dari Kartu
+    public string? KelasNama { get; set; } // Nama Kelas dari Kartu
+
+    public int? UserKelasId { get; set; }    // ID Kelas dari User (Siswa)
+    public string? UserKelasNama { get; set; } // Nama Kelas dari User (Siswa)
+    // --- Update Selesai ---
 }
+
 public class AksesLogUpdateRequest
 {
     public string? Keterangan { get; set; }

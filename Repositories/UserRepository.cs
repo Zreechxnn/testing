@@ -16,15 +16,17 @@ public class UserRepository : IUserRepository
     public async Task<User?> GetByIdAsync(int id)
     {
         return await _context.Users
-            .Include(u => u.Kartu)  // Include kartu yang dimiliki user
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == id);
+            .Include(u => u.Kartu)
+        .Include(u => u.Kelas) // Include Kelas
+        .AsNoTracking()
+        .FirstOrDefaultAsync(u => u.Id == id);
     }
 
     public async Task<User?> GetByUsernameAsync(string username)
     {
         return await _context.Users
             .Include(u => u.Kartu)  // Include kartu yang dimiliki user
+             .Include(u => u.Kelas) // Include Kelas
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Username.ToLower() == username.ToLower());
     }
@@ -41,16 +43,18 @@ public class UserRepository : IUserRepository
     public async Task<IEnumerable<User>> GetAllAsync()
     {
         return await _context.Users
-            .Include(u => u.Kartu)  // Include kartu yang dimiliki user
-            .AsNoTracking()
-            .OrderBy(u => u.Username)
-            .ToListAsync();
+            .Include(u => u.Kartu)
+        .Include(u => u.Kelas) // Include Kelas
+        .AsNoTracking()
+        .OrderBy(u => u.Username)
+        .ToListAsync();
     }
 
     public async Task<IEnumerable<User>> GetPagedAsync(int page, int pageSize)
     {
         return await _context.Users
             .Include(u => u.Kartu)
+             .Include(u => u.Kelas) // Include Kelas
             .AsNoTracking()
             .OrderBy(u => u.Username)
             .Skip((page - 1) * pageSize)

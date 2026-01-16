@@ -8,7 +8,10 @@ namespace testing.Models
         public required string Role { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        // Navigation property - satu user bisa memiliki banyak kartu
+        // Tambahkan ini
+        public int? KelasId { get; set; }
+        public virtual Kelas? Kelas { get; set; }
+
         public virtual ICollection<Kartu>? Kartu { get; set; }
     }
 }

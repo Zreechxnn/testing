@@ -5,6 +5,7 @@ public class UserCreateRequest
     public required string Username { get; set; }
     public required string Password { get; set; }
     public required string Role { get; set; }
+    public int? KelasId { get; set; } // Baru
 }
 
 public class UserUpdateRequest
@@ -12,6 +13,7 @@ public class UserUpdateRequest
     public required string Username { get; set; }
     public string? Password { get; set; }
     public required string Role { get; set; }
+    public int? KelasId { get; set; } // Baru
 }
 
 public class UserLoginRequest
@@ -36,4 +38,6 @@ public class UserDto
     public DateTime CreatedAt { get; set; }
     public string? KartuUid { get; set; }
     public int? KartuId { get; set; }
+    public int? KelasId { get; set; }
+    public string? KelasNama { get; set; }
 }

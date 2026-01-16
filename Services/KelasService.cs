@@ -76,7 +76,7 @@ public class KelasService : IKelasService
             }
 
             // 2. Validasi Nama Duplikat
-            var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama);
+            var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama, request.PeriodeId);
             if (existingKelas)
             {
                 return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar");
@@ -138,7 +138,7 @@ public class KelasService : IKelasService
             }
 
             // 3. Validasi Duplikat Nama
-            var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama, id);
+            var existingKelas = await _kelasRepository.IsNamaExistAsync(request.Nama, request.PeriodeId, id);
             if (existingKelas)
             {
                 return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar");

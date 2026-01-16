@@ -144,6 +144,7 @@ public class UserService : IUserService
             var passwordHash = HashPassword(request.Password);
             var user = _mapper.Map<User>(request);
             user.PasswordHash = passwordHash;
+            user.KelasId = request.KelasId;
 
             await _userRepository.AddAsync(user);
             var saved = await _userRepository.SaveAsync();
@@ -152,6 +153,7 @@ public class UserService : IUserService
 
             var createdUser = await _userRepository.GetByIdAsync(user.Id);
             var userDto = _mapper.Map<UserDto>(createdUser!);
+            userDto.KelasNama = createdUser!.Kelas?.Nama;
 
             _logger.LogInformation("User created: {Username}", user.Username);
 
@@ -184,6 +186,7 @@ public class UserService : IUserService
                 return ApiResponse<UserDto>.ErrorResult("Username sudah digunakan");
 
             _mapper.Map(request, user);
+            user.KelasId = request.KelasId;
 
             if (!string.IsNullOrWhiteSpace(request.Password))
             {

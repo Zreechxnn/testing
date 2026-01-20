@@ -53,13 +53,11 @@ public class AuthService : IAuthService
     {
         try
         {
-            // 1. Validasi Input
             if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
             {
                 return ApiResponse<UserLoginResponse>.ErrorResult("Username dan password harus diisi");
             }
 
-            // 2. Cek User
             var user = await _userRepository.GetByUsernameAsync(request.Username);
             if (user == null)
             {
@@ -71,47 +69,17 @@ public class AuthService : IAuthService
                 return ApiResponse<UserLoginResponse>.ErrorResult("Username atau password salah");
             }
 
-            // 3. LOGIKA BARU: Tentukan Kelas Berdasarkan Periode
-            Kelas? kelasAktif = null;
-
-            // Hanya proses logika kelas jika user adalah siswa
-            if (user.Role == "siswa")
-            {
-                // Validasi: Siswa wajib mengirim PeriodeId saat login
-                if (request.PeriodeId <= 0)
-                {
-                    // Opsional: Jika frontend belum siap, bisa di-skip, tapi sebaiknya diwajibkan
-                    // return ApiResponse<UserLoginResponse>.ErrorResult("Harap pilih periode akademik");
-                }
-                else
-                {
-                    // Cari kelas di history (AnggotaKelas) yang sesuai dengan PeriodeId yang dipilih
-                    var anggotaKelas = user.AnggotaKelas?
-                        .FirstOrDefault(ak => ak.Kelas != null && ak.Kelas.PeriodeId == request.PeriodeId);
-
-                    if (anggotaKelas != null)
-                    {
-                        kelasAktif = anggotaKelas.Kelas;
-                    }
-                }
-            }
-
-            // 4. Generate Token (Embed info Kelas & Periode)
-            var token = GenerateJwtToken(user, kelasAktif, request.PeriodeId);
+            var token = GenerateJwtToken(user);
 
             var response = new UserLoginResponse
             {
                 Id = user.Id,
                 Username = user.Username,
                 Role = user.Role,
-                Token = token,
-
-                // Return info tambahan ke frontend
-                KelasId = kelasAktif?.Id,
-                NamaKelas = kelasAktif?.Nama
+                Token = token
             };
 
-            _logger.LogInformation("User {Username} logged in successfully for Periode {PeriodeId}", user.Username, request.PeriodeId);
+            _logger.LogInformation("User logged in successfully: {Username}", user.Username);
             return ApiResponse<UserLoginResponse>.SuccessResult(response, "Login berhasil");
         }
         catch (Exception ex)
@@ -132,6 +100,17 @@ public class AuthService : IAuthService
             }
 
             var userDto = _mapper.Map<UserDto>(user);
+
+            // ==========================================
+            // PERBAIKAN DISINI (MENGHILANGKAN ERROR)
+            // ==========================================
+            // Kode Lama (Error): if (user.AnggotaKelas != null && ...)
+            // Kode Baru (Fixed): Cek user.Kelas langsung
+            if (user.Kelas != null)
+            {
+                userDto.KelasNama = user.Kelas.Nama;
+            }
+
             return ApiResponse<UserDto>.SuccessResult(userDto);
         }
         catch (Exception ex)
@@ -141,7 +120,8 @@ public class AuthService : IAuthService
         }
     }
 
-    public async Task<ApiResponse<List<object>>> GetRoles()
+    // Menggunakan Task.FromResult untuk menghilangkan warning CS1998 (async method lacks await)
+    public Task<ApiResponse<List<object>>> GetRoles()
     {
         try
         {
@@ -152,12 +132,61 @@ public class AuthService : IAuthService
                 new { Value = "operator", Label = "Operator" },
                 new { Value = "siswa", Label = "Siswa" },
             };
-            return ApiResponse<List<object>>.SuccessResult(roles);
+            return Task.FromResult(ApiResponse<List<object>>.SuccessResult(roles));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting roles");
-            return ApiResponse<List<object>>.ErrorResult("Gagal mengambil data roles");
+            return Task.FromResult(ApiResponse<List<object>>.ErrorResult("Gagal mengambil data roles"));
+        }
+    }
+
+    // Helper methods
+    private string HashPassword(string password)
+    {
+        return BCrypt.Net.BCrypt.HashPassword(password);
+    }
+
+    private bool VerifyPassword(string password, string passwordHash)
+    {
+        return BCrypt.Net.BCrypt.Verify(password, passwordHash);
+    }
+
+    private string GenerateJwtToken(User user)
+    {
+        try
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.UTF8.GetBytes(_jwtSecretKey);
+
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim(ClaimTypes.Name, user.Username),
+                new Claim(ClaimTypes.Role, user.Role),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            };
+
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(claims),
+                NotBefore = DateTime.UtcNow.AddMinutes(-1),
+                Expires = DateTime.UtcNow.AddMinutes(_jwtExpireMinutes),
+                IssuedAt = DateTime.UtcNow,
+                Issuer = _jwtIssuer,
+                Audience = _jwtAudience,
+                SigningCredentials = new SigningCredentials(
+                    new SymmetricSecurityKey(key),
+                    SecurityAlgorithms.HmacSha256Signature)
+            };
+
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating JWT token for user {Username}", user.Username);
+            throw new Exception($"Gagal generate token: {ex.Message}");
         }
     }
 
@@ -211,6 +240,7 @@ public class AuthService : IAuthService
                 }
             }
 
+            // Update data
             user.Username = request.Username;
 
             _userRepository.Update(user);
@@ -223,63 +253,6 @@ public class AuthService : IAuthService
         {
             _logger.LogError(ex, "Gagal update profile userId: {UserId}", userId);
             return ApiResponse<UserDto>.ErrorResult("Terjadi kesalahan saat memperbarui profil");
-        }
-    }
-
-    // Helper methods
-    private string HashPassword(string password)
-    {
-        return BCrypt.Net.BCrypt.HashPassword(password);
-    }
-
-    private bool VerifyPassword(string password, string passwordHash)
-    {
-        return BCrypt.Net.BCrypt.Verify(password, passwordHash);
-    }
-
-    private string GenerateJwtToken(User user, Kelas? kelas, int periodeId)
-    {
-        try
-        {
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.UTF8.GetBytes(_jwtSecretKey);
-
-            var claims = new List<Claim>
-            {
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Role, user.Role),
-                new Claim("PeriodeId", periodeId.ToString()), // Simpan Periode
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-            };
-
-            // Jika user punya kelas di periode ini, masukkan ke token
-            if (kelas != null)
-            {
-                claims.Add(new Claim("KelasId", kelas.Id.ToString()));
-                claims.Add(new Claim("NamaKelas", kelas.Nama));
-            }
-
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(claims),
-                NotBefore = DateTime.UtcNow.AddMinutes(-1),
-                Expires = DateTime.UtcNow.AddMinutes(_jwtExpireMinutes),
-                IssuedAt = DateTime.UtcNow,
-                Issuer = _jwtIssuer,
-                Audience = _jwtAudience,
-                SigningCredentials = new SigningCredentials(
-                    new SymmetricSecurityKey(key),
-                    SecurityAlgorithms.HmacSha256Signature)
-            };
-
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            return tokenHandler.WriteToken(token);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error generating JWT token for user {Username}", user.Username);
-            throw new Exception($"Gagal generate token: {ex.Message}");
         }
     }
 }

@@ -18,8 +18,11 @@ public class KelasController : ControllerBase
         _logger = logger;
     }
 
+    // ... (Method GetAll, GetById, Create, Update, Delete, GetStats, GetByPeriode TETAP SAMA seperti sebelumnya) ...
+    // ... Copy paste kode lama bagian atas disini ...
+
     [HttpGet]
-    [Authorize(Roles = "admin,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<List<KelasDto>>>> GetAll()
     {
         var response = await _kelasService.GetAllKelas();
@@ -27,7 +30,7 @@ public class KelasController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "admin,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<KelasDto>>> GetById(int id)
     {
         var response = await _kelasService.GetKelasById(id);
@@ -67,6 +70,7 @@ public class KelasController : ControllerBase
     }
 
     [HttpGet("stats/{id}")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<KelasStatsDto>>> GetStats(int id)
     {
         var response = await _kelasService.GetKelasStats(id);
@@ -80,6 +84,28 @@ public class KelasController : ControllerBase
     public async Task<IActionResult> GetByPeriode(int periodeId)
     {
         var response = await _kelasService.GetKelasByPeriode(periodeId);
+        return Ok(response);
+    }
+
+    // ==========================================
+    // TAMBAHAN BARU UNTUK DROPDOWN BERTINGKAT
+    // ==========================================
+
+    // 1. Ambil semua kelas berdasarkan Jurusan (Misal: Semua kelas RPL)
+    [HttpGet("jurusan/{jurusanId}")]
+    [Authorize(Roles = "admin,operator,guru")]
+    public async Task<IActionResult> GetByJurusan(int jurusanId)
+    {
+        var response = await _kelasService.GetKelasByJurusan(jurusanId);
+        return Ok(response);
+    }
+
+    // 2. Ambil kelas spesifik berdasarkan Jurusan DAN Tingkat (Misal: 10 RPL)
+    [HttpGet("jurusan/{jurusanId}/tingkat/{tingkat}")]
+    [Authorize(Roles = "admin,operator,guru")]
+    public async Task<IActionResult> GetByJurusanAndTingkat(int jurusanId, int tingkat)
+    {
+        var response = await _kelasService.GetKelasByJurusanAndTingkat(jurusanId, tingkat);
         return Ok(response);
     }
 }

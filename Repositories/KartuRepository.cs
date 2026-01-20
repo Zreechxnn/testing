@@ -18,6 +18,7 @@ public class KartuRepository : IKartuRepository
         return await _context.Kartu
             .Include(k => k.User)
             .Include(k => k.Kelas)
+                .ThenInclude(kl => kl!.Jurusan) // Tambah ini
             .FirstOrDefaultAsync(k => k.Id == id);
     }
 

@@ -8,7 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Microsoft.EntityFrameworkCore; // WAJIB ADA untuk DbUpdateException
+using Microsoft.EntityFrameworkCore;
 
 namespace testing.Services;
 
@@ -88,25 +88,23 @@ public class UserService : IUserService
             var user = _mapper.Map<User>(request);
             user.PasswordHash = HashPassword(request.Password);
 
-            // Handle Kelas (Create New List)
+            // --- FIX KELAS LOGIC ---
+            // Langsung set KelasId, tidak perlu List AnggotaKelas
+            user.KelasId = request.KelasId;
+
+            // Validasi keberadaan kelas jika ID dikirim
             if (request.KelasId.HasValue && request.KelasId > 0)
             {
                 var kelasExists = await _kelasRepository.GetByIdAsync(request.KelasId.Value);
                 if (kelasExists == null) return ApiResponse<UserDto>.ErrorResult("Kelas tidak valid");
-
-                user.AnggotaKelas = new List<AnggotaKelas>
-                {
-                    new AnggotaKelas { KelasId = request.KelasId.Value }
-                };
             }
 
             await _userRepository.AddAsync(user);
             await _userRepository.SaveAsync();
 
-            var createdDto = _mapper.Map<UserDto>(user);
-            // Patch nama kelas untuk response
-            if (user.AnggotaKelas != null && user.AnggotaKelas.Any())
-                createdDto.KelasNama = (await _kelasRepository.GetByIdAsync(request.KelasId!.Value))?.Nama;
+            // Reload user untuk mendapatkan data relasi lengkap (Nama Kelas)
+            var createdUser = await _userRepository.GetByIdAsync(user.Id);
+            var createdDto = _mapper.Map<UserDto>(createdUser);
 
             await SendUserNotification("USER_CREATED", createdDto);
             return ApiResponse<UserDto>.SuccessResult(createdDto, "User berhasil dibuat");
@@ -118,9 +116,6 @@ public class UserService : IUserService
         }
     }
 
-    // ==========================================
-    // BAGIAN INI YANG DIPERBAIKI (ANTI CRASH)
-    // ==========================================
     public async Task<ApiResponse<UserDto>> UpdateUser(int id, UserUpdateRequest request)
     {
         try
@@ -131,52 +126,38 @@ public class UserService : IUserService
             if (request.Username != user.Username && await _userRepository.IsUsernameExistAsync(request.Username))
                 return ApiResponse<UserDto>.ErrorResult("Username sudah digunakan");
 
+            // Update Field Dasar
             user.Username = request.Username;
             user.Role = request.Role;
 
             if (!string.IsNullOrWhiteSpace(request.Password))
                 user.PasswordHash = HashPassword(request.Password);
 
-            // --- LOGIKA UPDATE KELAS AMAN ---
-            if (request.KelasId.HasValue && request.KelasId > 0)
+            // --- FIX KELAS LOGIC ---
+            // Cukup update KelasId
+            if (request.KelasId.HasValue)
             {
-                // 1. Cek Kelas Valid
-                var kelasExists = await _kelasRepository.GetByIdAsync(request.KelasId.Value);
-                if (kelasExists == null) return ApiResponse<UserDto>.ErrorResult("Kelas tidak valid");
-
-                // 2. Init List jika null
-                if (user.AnggotaKelas == null) user.AnggotaKelas = new List<AnggotaKelas>();
-
-                // 3. Cek Duplikasi di Memory (Untuk Efisiensi)
-                bool alreadyExists = user.AnggotaKelas.Any(ak => ak.KelasId == request.KelasId.Value);
-
-                if (!alreadyExists)
+                if (request.KelasId.Value > 0)
                 {
-                    user.AnggotaKelas.Add(new AnggotaKelas { UserId = user.Id, KelasId = request.KelasId.Value });
+                    var kelasExists = await _kelasRepository.GetByIdAsync(request.KelasId.Value);
+                    if (kelasExists == null) return ApiResponse<UserDto>.ErrorResult("Kelas tidak valid");
+                    user.KelasId = request.KelasId.Value;
+                }
+                else
+                {
+                    // Jika dikirim 0 atau negatif, anggap remove kelas
+                    user.KelasId = null;
                 }
             }
+            // Note: Jika request.KelasId == null, kita biarkan data lama (sesuai pola PATCH/Update parsial)
+            // Atau jika Anda ingin null berarti menghapus kelas, ubah logika di atas.
 
             _userRepository.Update(user);
+            await _userRepository.SaveAsync();
 
-            // 4. Try-Catch Database Constraint (Safety Net Terakhir)
-            try
-            {
-                await _userRepository.SaveAsync();
-            }
-            catch (DbUpdateException dbEx)
-            {
-                _logger.LogWarning(dbEx, "Database concurrency/constraint issue during update user {Id}. Assuming success if duplicates.", id);
-                // Jika errornya karena duplicate key, kita anggap sukses (karena tujuannya user masuk kelas tsb)
-                // Jika bukan, lempar error
-                if (dbEx.InnerException != null && !dbEx.InnerException.Message.Contains("unique"))
-                {
-                    throw;
-                }
-            }
-
-            // Refresh data untuk response
+            // Refresh data response
             var updatedUser = await _userRepository.GetByIdAsync(id);
-            var userDto = _mapper.Map<UserDto>(updatedUser!);
+            var userDto = _mapper.Map<UserDto>(updatedUser);
 
             await SendUserNotification("USER_UPDATED", userDto);
             return ApiResponse<UserDto>.SuccessResult(userDto, "User berhasil diupdate");
@@ -208,7 +189,6 @@ public class UserService : IUserService
 
             await SendUserNotification("USER_DELETED", dto);
 
-            // Fix: Return object kosong {} bukan null
             return ApiResponse<object>.SuccessResult(new { }, "User berhasil dihapus");
         }
         catch (Exception ex)
@@ -227,28 +207,8 @@ public class UserService : IUserService
     // --- Helpers ---
     private string HashPassword(string p) => BCrypt.Net.BCrypt.HashPassword(p);
 
-    private string GenerateJwtToken(User user)
-    {
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var key = Encoding.UTF8.GetBytes(_jwtSecretKey);
-        var claims = new[] {
-            new Claim("id", user.Id.ToString()),
-            new Claim("name", user.Username),
-            new Claim("role", user.Role),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-        };
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Subject = new ClaimsIdentity(claims),
-            NotBefore = DateTime.UtcNow.AddMinutes(-1),
-            Expires = DateTime.UtcNow.AddMinutes(_jwtExpireMinutes),
-            IssuedAt = DateTime.UtcNow,
-            Issuer = _jwtIssuer,
-            Audience = _jwtAudience,
-            SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-        };
-        return tokenHandler.WriteToken(tokenHandler.CreateToken(tokenDescriptor));
-    }
+    // ... (GenerateJwtToken & SendUserNotification TETAP SAMA, tidak perlu dicopy ulang jika tidak berubah) ...
+    // ... Pastikan copy method GenerateJwtToken dan SendUserNotification dari kode lamamu ...
 
     private async Task SendUserNotification(string type, UserDto data)
     {
@@ -256,6 +216,6 @@ public class UserService : IUserService
         {
             await _hubContext.Clients.All.SendAsync("UserNotification", new { EventId = Guid.NewGuid(), EventType = type, Timestamp = DateTime.UtcNow, Data = data });
         }
-        catch { /* Ignore Hub Error */ }
+        catch { /* Ignore */ }
     }
 }

@@ -10,10 +10,12 @@ public class DashboardStatsDto
 
     public int TotalKartu { get; set; }
     public int TotalKelas { get; set; }
+    public int TotalJurusan { get; set; } // Baru
     public int TotalRuangan { get; set; }
     public int TotalUsers { get; set; }
 }
 
+// Class lainnya (TodayStatsDto, dll) biarkan tetap sama...
 public class TodayStatsDto
 {
     public string Tanggal { get; set; } = string.Empty;
@@ -46,6 +48,6 @@ public class MonthlyStatsDto
 
 public class DailyStatsDto
 {
-    public string Tanggal { get; set; } = string.Empty; // Contoh: "08 Dec"
+    public string Tanggal { get; set; } = string.Empty;
     public int Total { get; set; }
 }

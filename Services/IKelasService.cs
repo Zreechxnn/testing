@@ -11,4 +11,8 @@ public interface IKelasService
     Task<ApiResponse<object>> DeleteKelas(int id);
     Task<ApiResponse<KelasStatsDto>> GetKelasStats(int id);
     Task<ApiResponse<List<KelasDto>>> GetKelasByPeriode(int periodeId);
+
+    // --- BARU: Untuk Dropdown Bertingkat ---
+    Task<ApiResponse<List<KelasDto>>> GetKelasByJurusan(int jurusanId);
+    Task<ApiResponse<List<KelasDto>>> GetKelasByJurusanAndTingkat(int jurusanId, int tingkat);
 }

@@ -9,30 +9,21 @@ public class MappingProfile : Profile
     public MappingProfile()
     {
         // ==================================================
-        // NEW: ANGGOTA KELAS -> USER KELAS INFO
-        // ==================================================
-        // Ini untuk mengisi list RiwayatKelas di UserDto
-        CreateMap<AnggotaKelas, UserKelasInfo>()
-            .ForMember(dest => dest.KelasId, opt => opt.MapFrom(src => src.KelasId))
-            .ForMember(dest => dest.NamaKelas, opt => opt.MapFrom(src => src.Kelas != null ? src.Kelas.Nama : null))
-            .ForMember(dest => dest.NamaPeriode, opt => opt.MapFrom(src => src.Kelas != null && src.Kelas.Periode != null ? src.Kelas.Periode.Nama : null))
-            .ForMember(dest => dest.IsPeriodeAktif, opt => opt.MapFrom(src => src.Kelas != null && src.Kelas.Periode != null ? src.Kelas.Periode.IsAktif : false));
-
-        // ==================================================
-        // USER MAPPINGS
+        // USER MAPPINGS (Disederhanakan)
         // ==================================================
         CreateMap<User, UserDto>()
-            // Mapping Kartu
+            // 1. Mapping Kartu (Ambil kartu pertama jika ada)
             .ForMember(dest => dest.KartuUid, opt => opt.MapFrom(src =>
-                src.Kartu != null && src.Kartu.Any() ? src.Kartu.First().Uid : null))
+                src.Kartu != null && src.Kartu.Any() ? src.Kartu.FirstOrDefault()!.Uid : null))
+
             .ForMember(dest => dest.KartuId, opt => opt.MapFrom(src =>
-                src.Kartu != null && src.Kartu.Any() ? src.Kartu.First().Id : (int?)null))
+                src.Kartu != null && src.Kartu.Any() ? src.Kartu.FirstOrDefault()!.Id : (int?)null))
 
-            .ForMember(dest => dest.KelasId, opt => opt.Ignore())
-            .ForMember(dest => dest.KelasNama, opt => opt.Ignore())
+            // 2. Mapping Kelas (LANGSUNG DARI RELASI)
+            .ForMember(dest => dest.KelasId, opt => opt.MapFrom(src => src.KelasId))
+            .ForMember(dest => dest.KelasNama, opt => opt.MapFrom(src => src.Kelas != null ? src.Kelas.Nama : null));
 
-            // BARU: Mapping Riwayat Kelas (List)
-            .ForMember(dest => dest.RiwayatKelas, opt => opt.MapFrom(src => src.AnggotaKelas));
+        // HAPUS mapping RiwayatKelas / AnggotaKelas karena sudah tidak ada di model User
 
         CreateMap<UserCreateRequest, User>()
             .ForMember(dest => dest.PasswordHash, opt => opt.Ignore());
@@ -61,10 +52,20 @@ public class MappingProfile : Profile
         // KELAS MAPPINGS
         // ==================================================
         CreateMap<Kelas, KelasDto>()
-            .ForMember(dest => dest.PeriodeNama, opt => opt.MapFrom(src => src.Periode != null ? src.Periode.Nama : null));
+            .ForMember(dest => dest.PeriodeNama, opt => opt.MapFrom(src => src.Periode != null ? src.Periode.Nama : null))
+            // Tambahkan mapping Jurusan jika diperlukan nanti
+            .ForMember(dest => dest.JurusanKode, opt => opt.MapFrom(src => src.Jurusan != null ? src.Jurusan.Kode : null))
+            .ForMember(dest => dest.JurusanNama, opt => opt.MapFrom(src => src.Jurusan != null ? src.Jurusan.Nama : null));
 
         CreateMap<KelasCreateRequest, Kelas>();
         CreateMap<KelasUpdateRequest, Kelas>();
+
+        // ==================================================
+        // JURUSAN MAPPINGS (BARU)
+        // ==================================================
+        CreateMap<Jurusan, JurusanDto>();
+        CreateMap<JurusanCreateRequest, Jurusan>();
+        CreateMap<JurusanUpdateRequest, Jurusan>();
 
         // ==================================================
         // RUANGAN MAPPINGS
@@ -74,7 +75,7 @@ public class MappingProfile : Profile
         CreateMap<RuanganUpdateRequest, Ruangan>();
 
         // ==================================================
-        // AKSES LOG MAPPINGS (REVISI BAGIAN USER KELAS)
+        // AKSES LOG MAPPINGS
         // ==================================================
         CreateMap<AksesLog, AksesLogDto>()
             .ForMember(dest => dest.KartuUid, opt => opt.MapFrom(src => src.Kartu != null ? src.Kartu.Uid : null))
@@ -83,11 +84,9 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.UserUsername, opt => opt.MapFrom(src =>
                 src.Kartu != null && src.Kartu.User != null ? src.Kartu.User.Username : null))
 
+            // Nama Kelas dari Kartu (Prioritas)
             .ForMember(dest => dest.KelasId, opt => opt.MapFrom(src => src.Kartu != null ? src.Kartu.KelasId : null))
             .ForMember(dest => dest.KelasNama, opt => opt.MapFrom(src =>
-                src.Kartu != null && src.Kartu.Kelas != null ? src.Kartu.Kelas.Nama : null))
-
-            .ForMember(dest => dest.UserKelasId, opt => opt.Ignore())
-            .ForMember(dest => dest.UserKelasNama, opt => opt.Ignore());
+                src.Kartu != null && src.Kartu.Kelas != null ? src.Kartu.Kelas.Nama : null));
     }
 }

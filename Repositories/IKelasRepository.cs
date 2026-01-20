@@ -13,4 +13,8 @@ public interface IKelasRepository
     Task<int> CountAsync();
     Task<bool> SaveAsync();
     Task<IEnumerable<Kelas>> GetByPeriodeAsync(int periodeId);
+
+    // --- BARU: Untuk Dropdown Bertingkat ---
+    Task<IEnumerable<Kelas>> GetByJurusanAsync(int jurusanId);
+    Task<IEnumerable<Kelas>> GetByJurusanAndTingkatAsync(int jurusanId, int tingkat);
 }

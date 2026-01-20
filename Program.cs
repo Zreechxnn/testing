@@ -106,6 +106,7 @@ builder.Services.AddScoped<IRuanganService, RuanganService>();
 builder.Services.AddScoped<ITapService, TapService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IPeriodeService, PeriodeService>();
+builder.Services.AddScoped<IJurusanService, JurusanService>();
 builder.Services.AddScoped<IScanService, ScanService>();
 builder.Services.AddScoped<IBroadcastService, BroadcastService>();
 
@@ -116,6 +117,7 @@ builder.Services.AddScoped<IAksesLogRepository, AksesLogRepository>();
 builder.Services.AddScoped<IKelasRepository, KelasRepository>();
 builder.Services.AddScoped<IRuanganRepository, RuanganRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IJurusanRepository, JurusanRepository>();
 
 // Setup Ping Service & HttpClient
 builder.Services.AddHttpClient();

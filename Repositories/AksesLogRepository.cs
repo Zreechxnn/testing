@@ -17,12 +17,18 @@ public class AksesLogRepository : IAksesLogRepository
     {
         return _context.AksesLog
             .Include(a => a.Ruangan)
+
+            // Include Kartu -> Kelas -> Jurusan
             .Include(a => a.Kartu)
                 .ThenInclude(k => k!.Kelas)
+                    .ThenInclude(kl => kl!.Jurusan)
+
+            // Include Kartu -> User -> Kelas -> Jurusan
             .Include(a => a.Kartu)
                 .ThenInclude(k => k!.User)
-                    .ThenInclude(u => u!.AnggotaKelas!)
-                        .ThenInclude(ak => ak.Kelas)
+                    .ThenInclude(u => u!.Kelas)
+                        .ThenInclude(ukl => ukl!.Jurusan)
+
             .AsNoTracking();
     }
 

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using testing.DTOs;
 using testing.Services;
 
@@ -29,7 +30,6 @@ public class PeriodeController : ControllerBase
         return Ok(result);
     }
 
-    // <--- Tambahkan endpoint ini
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -41,7 +41,6 @@ public class PeriodeController : ControllerBase
         return Ok(result);
     }
 
-    // Jangan lupa endpoint SetActive jika belum ada di Controller kamu
     [HttpPut("{id}/active")]
     public async Task<IActionResult> SetActive(int id)
     {

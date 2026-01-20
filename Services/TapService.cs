@@ -102,9 +102,7 @@ public class TapService : ITapService
             }
 
             _logger.LogInformation("Room found: ID={RuanganId}, Name={RuanganNama}", ruangan.Id, ruangan.Nama);
-
             string identitas = GetIdentitasFromKartu(kartu);
-
             DateTime tapTime;
             DateTime tapTimeUtc;
 
@@ -124,9 +122,7 @@ public class TapService : ITapService
             }
 
             tapTimeUtc = DateTime.SpecifyKind(tapTimeUtc, DateTimeKind.Utc);
-
             var result = await ProcessTapLogic(kartu, ruangan, tapTime, tapTimeUtc, identitas);
-
             _logger.LogInformation("=== END PROCESS TAP - SUCCESS ===");
             return result;
         }

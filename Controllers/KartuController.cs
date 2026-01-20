@@ -19,15 +19,14 @@ public class KartuController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "admin,operator")]
-    public async Task<ActionResult<ApiResponse<List<KartuDto>>>> GetAll()
+    [Authorize(Roles = "admin,operator,guru,siswa")]    public async Task<ActionResult<ApiResponse<List<KartuDto>>>> GetAll()
     {
         var response = await _kartuService.GetAllKartu();
         return Ok(response);
     }
 
     [HttpGet("paged")]
-    [Authorize(Roles = "admin,operator")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<PagedResponse<KartuDto>>>> GetPaged([FromQuery] PagedRequest request)
     {
         var response = await _kartuService.GetKartuPaged(request);
@@ -35,7 +34,7 @@ public class KartuController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "admin,operator")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<KartuDto>>> GetById(int id)
     {
         var response = await _kartuService.GetKartuById(id);

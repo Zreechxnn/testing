@@ -18,9 +18,6 @@ public class KelasController : ControllerBase
         _logger = logger;
     }
 
-    // ... (Method GetAll, GetById, Create, Update, Delete, GetStats, GetByPeriode TETAP SAMA seperti sebelumnya) ...
-    // ... Copy paste kode lama bagian atas disini ...
-
     [HttpGet]
     [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<List<KelasDto>>>> GetAll()
@@ -87,11 +84,6 @@ public class KelasController : ControllerBase
         return Ok(response);
     }
 
-    // ==========================================
-    // TAMBAHAN BARU UNTUK DROPDOWN BERTINGKAT
-    // ==========================================
-
-    // 1. Ambil semua kelas berdasarkan Jurusan (Misal: Semua kelas RPL)
     [HttpGet("jurusan/{jurusanId}")]
     [Authorize(Roles = "admin,operator,guru")]
     public async Task<IActionResult> GetByJurusan(int jurusanId)

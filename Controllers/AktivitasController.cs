@@ -20,9 +20,8 @@ public class AktivitasController : ControllerBase
         _logger = logger;
     }
 
-    // Dari AksesLogController
     [HttpGet]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<List<AksesLogDto>>>> GetAll()
     {
         var response = await _aksesLogService.GetAllAksesLog();
@@ -30,7 +29,7 @@ public class AktivitasController : ControllerBase
     }
 
     [HttpGet("paged")]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<PagedResponse<AksesLogDto>>>> GetPaged([FromQuery] PagedRequest request)
     {
         var response = await _aksesLogService.GetAksesLogPaged(request);
@@ -38,7 +37,7 @@ public class AktivitasController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<AksesLogDto>>> GetById(int id)
     {
         var response = await _aksesLogService.GetAksesLogById(id);
@@ -48,7 +47,7 @@ public class AktivitasController : ControllerBase
     }
 
     [HttpGet("kartu/{kartuId}")]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<List<AksesLogDto>>>> GetByKartuId(int kartuId)
     {
         var response = await _aksesLogService.GetAksesLogByKartuId(kartuId);
@@ -56,7 +55,7 @@ public class AktivitasController : ControllerBase
     }
 
     [HttpGet("ruangan/{ruanganId}")]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<List<AksesLogDto>>>> GetByRuanganId(int ruanganId)
     {
         var response = await _aksesLogService.GetAksesLogByRuanganId(ruanganId);
@@ -64,7 +63,7 @@ public class AktivitasController : ControllerBase
     }
 
     [HttpGet("latest/{count}")]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<List<AksesLogDto>>>> GetLatest(int count)
     {
         var response = await _aksesLogService.GetLatestAksesLog(count);
@@ -72,7 +71,7 @@ public class AktivitasController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,guru")]
     public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
     {
         var response = await _aksesLogService.DeleteAksesLog(id);
@@ -81,7 +80,6 @@ public class AktivitasController : ControllerBase
         return Ok(response);
     }
 
-    // Dari TapController (kecuali stats yang pindah ke Dashboard)
     [HttpPost("tap")]
     public async Task<ActionResult<ApiResponse<TapResponse>>> ProcessTap([FromBody] TapRequest request)
     {
@@ -90,7 +88,7 @@ public class AktivitasController : ControllerBase
     }
 
     [HttpGet("tap-logs")]
-    [Authorize(Roles = "admin,operator,guru")]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<ActionResult<ApiResponse<List<object>>>> GetTapLogs([FromQuery] int? ruanganId = null)
     {
         var response = await _tapService.GetLogs(ruanganId);

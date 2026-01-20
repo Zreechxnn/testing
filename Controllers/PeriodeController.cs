@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using testing.DTOs;
 using testing.Services;
 
@@ -16,6 +17,7 @@ public class PeriodeController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Roles = "admin,operator,guru,siswa")]
     public async Task<IActionResult> GetAll()
     {
         var result = await _periodeService.GetAll();
@@ -23,14 +25,15 @@ public class PeriodeController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = "admin")]
     public async Task<IActionResult> Create([FromBody] PeriodeCreateRequest request)
     {
         var result = await _periodeService.Create(request);
         return Ok(result);
     }
 
-    // <--- Tambahkan endpoint ini
     [HttpDelete("{id}")]
+    [Authorize(Roles = "admin")]
     public async Task<IActionResult> Delete(int id)
     {
         var result = await _periodeService.Delete(id);
@@ -41,8 +44,8 @@ public class PeriodeController : ControllerBase
         return Ok(result);
     }
 
-    // Jangan lupa endpoint SetActive jika belum ada di Controller kamu
     [HttpPut("{id}/active")]
+    [Authorize(Roles = "admin")]
     public async Task<IActionResult> SetActive(int id)
     {
         var result = await _periodeService.SetActive(id);

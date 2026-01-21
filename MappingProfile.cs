@@ -84,9 +84,14 @@ public class MappingProfile : Profile
             .ForMember(dest => dest.UserUsername, opt => opt.MapFrom(src =>
                 src.Kartu != null && src.Kartu.User != null ? src.Kartu.User.Username : null))
 
-            // Nama Kelas dari Kartu (Prioritas)
             .ForMember(dest => dest.KelasId, opt => opt.MapFrom(src => src.Kartu != null ? src.Kartu.KelasId : null))
             .ForMember(dest => dest.KelasNama, opt => opt.MapFrom(src =>
-                src.Kartu != null && src.Kartu.Kelas != null ? src.Kartu.Kelas.Nama : null));
+                src.Kartu != null && src.Kartu.Kelas != null ? src.Kartu.Kelas.Nama : null))
+
+            .ForMember(dest => dest.UserKelasId, opt => opt.MapFrom(src =>
+                src.Kartu != null && src.Kartu.User != null ? src.Kartu.User.KelasId : null))
+            .ForMember(dest => dest.UserKelasNama, opt => opt.MapFrom(src =>
+                src.Kartu != null && src.Kartu.User != null && src.Kartu.User.Kelas != null
+                ? src.Kartu.User.Kelas.Nama : null));
     }
 }

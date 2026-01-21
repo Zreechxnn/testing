@@ -21,7 +21,7 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("stats")]
-    [Authorize(Roles = "admin,operator,guru,siswa")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<DashboardStatsDto>>> GetDashboardStats()
     {
         var response = await _aksesLogService.GetDashboardStats();
@@ -29,7 +29,7 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("today-stats")]
-    [Authorize(Roles = "admin,operator,guru,siswa")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<TodayStatsDto>>> GetTodayStats()
     {
         var response = await _aksesLogService.GetTodayStats();
@@ -37,7 +37,7 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("tap-stats")]
-    [Authorize(Roles = "admin,operator,guru,siswa")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<object>>> GetTapStats()
     {
         var response = await _tapService.GetStats();
@@ -45,7 +45,7 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("today-tap-stats")]
-    [Authorize(Roles = "admin,operator,guru,siswa")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<object>>> GetTodayTapStats()
     {
         var response = await _tapService.GetStatsHariIni();
@@ -53,7 +53,7 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("monthly-stats")]
-    [Authorize(Roles = "admin,operator,guru,siswa")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<List<MonthlyStatsDto>>>> GetMonthlyStats([FromQuery] int? year)
     {
         // Jika tahun tidak dikirim, gunakan tahun sekarang
@@ -63,7 +63,7 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("last-30-days-stats")]
-    [Authorize(Roles = "admin,operator,guru,siswa")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<List<DailyStatsDto>>>> GetLast30DaysStats()
     {
         var response = await _aksesLogService.GetLast30DaysStats();

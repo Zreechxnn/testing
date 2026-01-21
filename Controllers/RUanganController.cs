@@ -19,7 +19,7 @@ public class RuanganController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "admin,operator,guru,siswa")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<List<RuanganDto>>>> GetAll()
     {
         var response = await _ruanganService.GetAllRuangan();
@@ -27,7 +27,7 @@ public class RuanganController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "admin,operator,guru,siswa")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<RuanganDto>>> GetById(int id)
     {
         var response = await _ruanganService.GetRuanganById(id);

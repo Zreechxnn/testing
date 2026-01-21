@@ -17,7 +17,7 @@ public class PeriodeController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "admin,operator,guru,siswa")]
+    [Authorize]
     public async Task<IActionResult> GetAll()
     {
         var result = await _periodeService.GetAll();

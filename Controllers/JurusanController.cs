@@ -19,7 +19,7 @@ public class JurusanController : ControllerBase
     }
 
     [HttpGet]
-    [Authorize(Roles = "admin,operator,guru,siswa")]
+    [Authorize]
     public async Task<ActionResult<ApiResponse<List<JurusanDto>>>> GetAll()
     {
         var response = await _jurusanService.GetAll();

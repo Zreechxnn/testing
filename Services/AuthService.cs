@@ -6,6 +6,8 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.AspNetCore.SignalR; // TAMBAHKAN INI
+using testing.Hubs; // TAMBAHKAN INI
 
 namespace testing.Services;
 
@@ -14,6 +16,7 @@ public class AuthService : IAuthService
     private readonly IUserRepository _userRepository;
     private readonly IMapper _mapper;
     private readonly ILogger<AuthService> _logger;
+    private readonly IHubContext<LogHub> _hubContext; // 1. Inject HubContext
 
     // JWT Settings
     private readonly string _jwtSecretKey;
@@ -25,11 +28,13 @@ public class AuthService : IAuthService
         IUserRepository userRepository,
         IMapper mapper,
         ILogger<AuthService> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IHubContext<LogHub> hubContext) // 2. Tambahkan ke Constructor
     {
         _userRepository = userRepository;
         _mapper = mapper;
         _logger = logger;
+        _hubContext = hubContext; // 3. Assign
 
         // Load JWT settings
         _jwtSecretKey = Environment.GetEnvironmentVariable("JwtSettings__SecretKey")
@@ -101,11 +106,7 @@ public class AuthService : IAuthService
 
             var userDto = _mapper.Map<UserDto>(user);
 
-            // ==========================================
-            // PERBAIKAN DISINI (MENGHILANGKAN ERROR)
-            // ==========================================
-            // Kode Lama (Error): if (user.AnggotaKelas != null && ...)
-            // Kode Baru (Fixed): Cek user.Kelas langsung
+            // Fix Logic Kelas
             if (user.Kelas != null)
             {
                 userDto.KelasNama = user.Kelas.Nama;
@@ -120,7 +121,6 @@ public class AuthService : IAuthService
         }
     }
 
-    // Menggunakan Task.FromResult untuk menghilangkan warning CS1998 (async method lacks await)
     public Task<ApiResponse<List<object>>> GetRoles()
     {
         try
@@ -141,7 +141,6 @@ public class AuthService : IAuthService
         }
     }
 
-    // Helper methods
     private string HashPassword(string password)
     {
         return BCrypt.Net.BCrypt.HashPassword(password);
@@ -247,6 +246,13 @@ public class AuthService : IAuthService
             await _userRepository.SaveAsync();
 
             var userDto = _mapper.Map<UserDto>(user);
+
+            // --- SIGNALR UPDATE ---
+            // Memberitahu admin bahwa user ini baru saja mengupdate profilnya (misal ganti username)
+            // Frontend 'UsersPage' akan menangkap ini dan merefresh tabel
+            await SendUserNotification("USER_UPDATED", userDto);
+            // ----------------------
+
             return ApiResponse<UserDto>.SuccessResult(userDto, "Profil berhasil diperbarui");
         }
         catch (Exception ex)
@@ -254,5 +260,22 @@ public class AuthService : IAuthService
             _logger.LogError(ex, "Gagal update profile userId: {UserId}", userId);
             return ApiResponse<UserDto>.ErrorResult("Terjadi kesalahan saat memperbarui profil");
         }
+    }
+
+    // Helper untuk SignalR
+    private async Task SendUserNotification(string type, UserDto data)
+    {
+        try
+        {
+            var payload = new
+            {
+                EventId = Guid.NewGuid(),
+                EventType = type,
+                Timestamp = DateTime.UtcNow,
+                Data = data
+            };
+            await _hubContext.Clients.All.SendAsync("UserNotification", payload);
+        }
+        catch { /* Ignore */ }
     }
 }

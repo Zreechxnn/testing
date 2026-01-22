@@ -1,6 +1,5 @@
 using AutoMapper;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
 using testing.DTOs;
 using testing.Hubs;
 using testing.Models;
@@ -12,25 +11,28 @@ public class KelasService : IKelasService
 {
     private readonly IKelasRepository _kelasRepository;
     private readonly IPeriodeRepository _periodeRepository;
-    private readonly IJurusanRepository _jurusanRepository; // Inject JurusanRepo
+    private readonly IJurusanRepository _jurusanRepository;
     private readonly IMapper _mapper;
     private readonly ILogger<KelasService> _logger;
     private readonly IHubContext<LogHub> _hubContext;
+    private readonly IBroadcastService _broadcastService;
 
     public KelasService(
         IKelasRepository kelasRepository,
         IPeriodeRepository periodeRepository,
-        IJurusanRepository jurusanRepository, // Inject
+        IJurusanRepository jurusanRepository,
         IMapper mapper,
         ILogger<KelasService> logger,
-        IHubContext<LogHub> hubContext)
+        IHubContext<LogHub> hubContext,
+        IBroadcastService broadcastService)
     {
         _kelasRepository = kelasRepository;
         _periodeRepository = periodeRepository;
-        _jurusanRepository = jurusanRepository; // Assign
+        _jurusanRepository = jurusanRepository;
         _mapper = mapper;
         _logger = logger;
         _hubContext = hubContext;
+        _broadcastService = broadcastService;
     }
 
     public async Task<ApiResponse<List<KelasDto>>> GetAllKelas()
@@ -56,7 +58,6 @@ public class KelasService : IKelasService
             if (kelas == null) return ApiResponse<KelasDto>.ErrorResult("Kelas tidak ditemukan");
 
             var kelasDto = _mapper.Map<KelasDto>(kelas);
-            // Manual map jika automapper belum dikonfigurasi lengkap
             if (kelas.Jurusan != null)
             {
                 kelasDto.JurusanKode = kelas.Jurusan.Kode;
@@ -75,27 +76,21 @@ public class KelasService : IKelasService
     {
         try
         {
-            // 1. Validasi Input
             if (string.IsNullOrWhiteSpace(request.Nama))
                 return ApiResponse<KelasDto>.ErrorResult("Nama kelas harus diisi");
 
-            // 2. Validasi Duplikat
             if (await _kelasRepository.IsNamaExistAsync(request.Nama, request.PeriodeId))
                 return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar di periode ini");
 
-            // 3. Validasi Periode
             var periodeExist = await _periodeRepository.GetByIdAsync(request.PeriodeId);
             if (periodeExist == null)
                 return ApiResponse<KelasDto>.ErrorResult("Periode tidak ditemukan");
 
-            // 4. Validasi Jurusan (BARU)
             var jurusanExist = await _jurusanRepository.GetByIdAsync(request.JurusanId);
             if (jurusanExist == null)
                 return ApiResponse<KelasDto>.ErrorResult("Jurusan tidak ditemukan");
 
-            // 5. Mapping
             var kelas = _mapper.Map<Kelas>(request);
-            // Map manual field baru untuk memastikan
             kelas.JurusanId = request.JurusanId;
             kelas.Tingkat = request.Tingkat;
             kelas.PeriodeId = request.PeriodeId;
@@ -106,13 +101,13 @@ public class KelasService : IKelasService
 
             _logger.LogInformation("Kelas created: {Nama}", kelas.Nama);
 
-            // 6. Response & SignalR
             var kelasDto = _mapper.Map<KelasDto>(kelas);
             kelasDto.PeriodeNama = periodeExist.Nama;
             kelasDto.JurusanNama = jurusanExist.Nama;
             kelasDto.JurusanKode = jurusanExist.Kode;
 
             await SendKelasNotification("KELAS_CREATED", kelasDto, $"Kelas baru '{kelas.Nama}' berhasil ditambahkan");
+            await _broadcastService.PushDashboardStatsAsync();
 
             return ApiResponse<KelasDto>.SuccessResult(kelasDto, "Kelas berhasil ditambahkan");
         }
@@ -133,7 +128,6 @@ public class KelasService : IKelasService
             if (await _kelasRepository.IsNamaExistAsync(request.Nama, request.PeriodeId, id))
                 return ApiResponse<KelasDto>.ErrorResult("Kelas dengan nama tersebut sudah terdaftar");
 
-            // Validasi Relasi
             if (await _periodeRepository.GetByIdAsync(request.PeriodeId) == null)
                 return ApiResponse<KelasDto>.ErrorResult("Periode tidak ditemukan");
 
@@ -143,15 +137,13 @@ public class KelasService : IKelasService
 
             var namaLama = kelas.Nama;
 
-            // Update Field
             _mapper.Map(request, kelas);
-            kelas.JurusanId = request.JurusanId; // Pastikan ter-update
+            kelas.JurusanId = request.JurusanId;
             kelas.Tingkat = request.Tingkat;
 
             await _kelasRepository.SaveAsync();
 
             var kelasDto = _mapper.Map<KelasDto>(kelas);
-            // Isi info tambahan untuk response
             kelasDto.JurusanNama = jurusan.Nama;
             kelasDto.JurusanKode = jurusan.Kode;
 
@@ -178,6 +170,7 @@ public class KelasService : IKelasService
                 return ApiResponse<object>.ErrorResult("Gagal menghapus kelas");
 
             await SendKelasNotification("KELAS_DELETED", new KelasDto { Id = id, Nama = kelas.Nama }, $"Kelas '{kelas.Nama}' dihapus");
+            await _broadcastService.PushDashboardStatsAsync();
 
             return ApiResponse<object>.SuccessResult(null!, "Kelas berhasil dihapus");
         }
@@ -190,7 +183,6 @@ public class KelasService : IKelasService
 
     public async Task<ApiResponse<KelasStatsDto>> GetKelasStats(int id)
     {
-        // ... (Kode sama seperti sebelumnya)
         return ApiResponse<KelasStatsDto>.SuccessResult(new KelasStatsDto());
     }
 
@@ -199,8 +191,6 @@ public class KelasService : IKelasService
         var data = await _kelasRepository.GetByPeriodeAsync(periodeId);
         return ApiResponse<List<KelasDto>>.SuccessResult(_mapper.Map<List<KelasDto>>(data));
     }
-
-    // --- IMPLEMENTASI BARU UNTUK DROPDOWN ---
 
     public async Task<ApiResponse<List<KelasDto>>> GetKelasByJurusan(int jurusanId)
     {
@@ -214,14 +204,22 @@ public class KelasService : IKelasService
         return ApiResponse<List<KelasDto>>.SuccessResult(_mapper.Map<List<KelasDto>>(data));
     }
 
-    // --- SignalR Helper ---
-    private async Task SendKelasNotification(string eventType, KelasDto kelasDto, string message)
+    private async Task SendKelasNotification(string action, KelasDto kelasDto, string message)
     {
         try
         {
-            var notif = new { EventType = eventType, Data = kelasDto, Message = message, Timestamp = DateTime.UtcNow };
-            await _hubContext.Clients.All.SendAsync("KelasNotification", notif);
+            var payload = new
+            {
+                Action = action,
+                Data = kelasDto,
+                Message = message,
+                Timestamp = DateTime.UtcNow
+            };
+            await _hubContext.Clients.All.SendAsync("KelasChanged", payload);
         }
-        catch { /* Ignore error */ }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Gagal mengirim notifikasi SignalR Kelas");
+        }
     }
 }

@@ -21,6 +21,7 @@ public class UserService : IUserService
     private readonly ILogger<UserService> _logger;
     private readonly IConfiguration _configuration;
     private readonly IHubContext<LogHub> _hubContext;
+    private readonly IBroadcastService _broadcastService; // 1. Inject BroadcastService
 
     private readonly string _jwtSecretKey;
     private readonly string _jwtIssuer;
@@ -34,7 +35,8 @@ public class UserService : IUserService
         IMapper mapper,
         ILogger<UserService> logger,
         IConfiguration configuration,
-        IHubContext<LogHub> hubContext)
+        IHubContext<LogHub> hubContext,
+        IBroadcastService broadcastService) // 2. Tambahkan di Constructor
     {
         _userRepository = userRepository;
         _kartuRepository = kartuRepository;
@@ -43,6 +45,7 @@ public class UserService : IUserService
         _logger = logger;
         _configuration = configuration;
         _hubContext = hubContext;
+        _broadcastService = broadcastService; // 3. Assign
 
         _jwtSecretKey = Environment.GetEnvironmentVariable("JwtSettings__SecretKey")
                         ?? configuration["JwtSettings:SecretKey"]
@@ -88,11 +91,9 @@ public class UserService : IUserService
             var user = _mapper.Map<User>(request);
             user.PasswordHash = HashPassword(request.Password);
 
-            // --- FIX KELAS LOGIC ---
-            // Langsung set KelasId, tidak perlu List AnggotaKelas
+            // Fix Logic Relasi Kelas
             user.KelasId = request.KelasId;
 
-            // Validasi keberadaan kelas jika ID dikirim
             if (request.KelasId.HasValue && request.KelasId > 0)
             {
                 var kelasExists = await _kelasRepository.GetByIdAsync(request.KelasId.Value);
@@ -102,11 +103,14 @@ public class UserService : IUserService
             await _userRepository.AddAsync(user);
             await _userRepository.SaveAsync();
 
-            // Reload user untuk mendapatkan data relasi lengkap (Nama Kelas)
             var createdUser = await _userRepository.GetByIdAsync(user.Id);
             var createdDto = _mapper.Map<UserDto>(createdUser);
 
+            // --- SIGNALR UPDATES ---
             await SendUserNotification("USER_CREATED", createdDto);
+            await _broadcastService.PushDashboardStatsAsync(); // Update Counter User
+            // -----------------------
+
             return ApiResponse<UserDto>.SuccessResult(createdDto, "User berhasil dibuat");
         }
         catch (Exception ex)
@@ -126,15 +130,13 @@ public class UserService : IUserService
             if (request.Username != user.Username && await _userRepository.IsUsernameExistAsync(request.Username))
                 return ApiResponse<UserDto>.ErrorResult("Username sudah digunakan");
 
-            // Update Field Dasar
             user.Username = request.Username;
             user.Role = request.Role;
 
             if (!string.IsNullOrWhiteSpace(request.Password))
                 user.PasswordHash = HashPassword(request.Password);
 
-            // --- FIX KELAS LOGIC ---
-            // Cukup update KelasId
+            // Fix Logic Relasi Kelas (Update)
             if (request.KelasId.HasValue)
             {
                 if (request.KelasId.Value > 0)
@@ -145,21 +147,19 @@ public class UserService : IUserService
                 }
                 else
                 {
-                    // Jika dikirim 0 atau negatif, anggap remove kelas
+                    // ID 0 atau negatif berarti hapus kelas
                     user.KelasId = null;
                 }
             }
-            // Note: Jika request.KelasId == null, kita biarkan data lama (sesuai pola PATCH/Update parsial)
-            // Atau jika Anda ingin null berarti menghapus kelas, ubah logika di atas.
 
             _userRepository.Update(user);
             await _userRepository.SaveAsync();
 
-            // Refresh data response
             var updatedUser = await _userRepository.GetByIdAsync(id);
             var userDto = _mapper.Map<UserDto>(updatedUser);
 
             await SendUserNotification("USER_UPDATED", userDto);
+
             return ApiResponse<UserDto>.SuccessResult(userDto, "User berhasil diupdate");
         }
         catch (Exception ex)
@@ -187,7 +187,10 @@ public class UserService : IUserService
             _userRepository.Remove(user);
             await _userRepository.SaveAsync();
 
+            // --- SIGNALR UPDATES ---
             await SendUserNotification("USER_DELETED", dto);
+            await _broadcastService.PushDashboardStatsAsync(); // Update Counter User
+            // -----------------------
 
             return ApiResponse<object>.SuccessResult(new { }, "User berhasil dihapus");
         }
@@ -207,15 +210,50 @@ public class UserService : IUserService
     // --- Helpers ---
     private string HashPassword(string p) => BCrypt.Net.BCrypt.HashPassword(p);
 
-    // ... (GenerateJwtToken & SendUserNotification TETAP SAMA, tidak perlu dicopy ulang jika tidak berubah) ...
-    // ... Pastikan copy method GenerateJwtToken dan SendUserNotification dari kode lamamu ...
-
     private async Task SendUserNotification(string type, UserDto data)
     {
         try
         {
-            await _hubContext.Clients.All.SendAsync("UserNotification", new { EventId = Guid.NewGuid(), EventType = type, Timestamp = DateTime.UtcNow, Data = data });
+            var payload = new
+            {
+                EventId = Guid.NewGuid(),
+                EventType = type,
+                Timestamp = DateTime.UtcNow,
+                Data = data,
+                Message = $"User {data.Username} telah {type.Split('_')[1].ToLower()}"
+            };
+            await _hubContext.Clients.All.SendAsync("UserNotification", payload);
         }
-        catch { /* Ignore */ }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Gagal mengirim notifikasi user");
+        }
+    }
+
+    // METHOD WAJIB (Karena UserService juga handle Auth di Controller)
+    // Biasanya dipanggil dari AuthService atau Controller login
+    public string GenerateJwtToken(User user)
+    {
+        var claims = new List<Claim>
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
+            new Claim("role", user.Role), // Penting untuk otorisasi di FE
+            new Claim("name", user.Username)
+        };
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSecretKey));
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var expires = DateTime.UtcNow.AddMinutes(_jwtExpireMinutes);
+
+        var token = new JwtSecurityToken(
+            _jwtIssuer,
+            _jwtAudience,
+            claims,
+            expires: expires,
+            signingCredentials: creds
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }

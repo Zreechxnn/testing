@@ -128,16 +128,16 @@ var corsOriginsRaw = builder.Configuration["CORS:Origins"]; // Baca dari Env/Jso
 builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", p =>
     {
-if (string.IsNullOrEmpty(corsOriginsRaw) || corsOriginsRaw == "*")
-{
-p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
-}
-else
-{
-var origins = corsOriginsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(o => o.Trim()).ToArray();
-p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
-}
-}));
+        if (string.IsNullOrEmpty(corsOriginsRaw) || corsOriginsRaw == "*")
+        {
+            p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+        }
+        else
+        {
+            var origins = corsOriginsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(o => o.Trim()).ToArray();
+            p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+        }
+    }));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 .AddJwtBearer(options =>
@@ -257,20 +257,16 @@ public class DailyPingService : BackgroundService
                 var client = _httpClientFactory.CreateClient();
                 client.Timeout = TimeSpan.FromSeconds(20);
 
-                // GANTI ke LogDebug: Tidak akan muncul di console produksi
                 _logger.LogDebug($"[🚀 PING] Mengirim sinyal ke {targetUrl}...");
 
                 var response = await client.GetAsync($"{targetUrl}/", stoppingToken);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    // GANTI ke LogDebug: "No news is good news". 
-                    // Log hanya dicatat jika kamu set level logging ke Debug.
-                    _logger.LogDebug($"[✅ PING SUKSES] {response.StatusCode}");
+                    // _logger.LogDebug($"[✅ PING SUKSES] {response.StatusCode}");
                 }
                 else
                 {
-                    // TETAP Warning: Penting untuk tahu jika server menolak ping
                     _logger.LogWarning($"[⚠️ PING WARNING] {response.StatusCode}");
                 }
             }
@@ -280,7 +276,7 @@ public class DailyPingService : BackgroundService
                 _logger.LogError($"[❌ PING ERROR] Gagal menghubungi {targetUrl}: {ex.Message}");
             }
 
-            await Task.Delay(TimeSpan.FromMinutes(3), stoppingToken);
+            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
         }
     }
 }

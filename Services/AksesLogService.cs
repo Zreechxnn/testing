@@ -471,7 +471,28 @@ public class AksesLogService : IAksesLogService
         _aksesLogRepository.Update(log);
         await _aksesLogRepository.SaveAsync();
 
-        return ApiResponse<AksesLogDto>.SuccessResult(_mapper.Map<AksesLogDto>(log), "Catatan berhasil ditambahkan");
+        var resultDto = _mapper.Map<AksesLogDto>(log);
+
+        if (log.Kartu != null) resultDto.KartuUid = log.Kartu.Uid;
+        if (log.Ruangan != null) resultDto.RuanganNama = log.Ruangan.Nama;
+
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("AksesLogUpdated", resultDto);
+
+            await _hubContext.Clients.Group("admin").SendAsync("Notification", new
+            {
+                Type = "NOTE_UPDATED",
+                Message = $"Catatan diperbarui untuk log ID {id}",
+                Data = resultDto
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Gagal mengirim notifikasi SignalR update keterangan");
+        }
+
+        return ApiResponse<AksesLogDto>.SuccessResult(resultDto, "Catatan berhasil ditambahkan");
     }
 
 }

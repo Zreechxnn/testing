@@ -1,4 +1,5 @@
 using testing.DTOs;
+using testing.Models;
 
 namespace testing.Services;
 

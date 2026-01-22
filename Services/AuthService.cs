@@ -106,7 +106,6 @@ public class AuthService : IAuthService
 
             var userDto = _mapper.Map<UserDto>(user);
 
-            // Fix Logic Kelas
             if (user.Kelas != null)
             {
                 userDto.KelasNama = user.Kelas.Nama;

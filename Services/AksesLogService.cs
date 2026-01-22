@@ -197,40 +197,39 @@ public class AksesLogService : IAksesLogService
         {
             var aksesLog = await _aksesLogRepository.GetByIdAsync(id);
             if (aksesLog == null)
-            {
                 return ApiResponse<object>.ErrorResult("Akses log tidak ditemukan");
-            }
 
             var deleted = await _aksesLogRepository.DeleteAsync(id);
             if (!deleted)
-            {
                 return ApiResponse<object>.ErrorResult("Gagal menghapus akses log");
-            }
 
             _logger.LogInformation("Akses log deleted: {Id}", id);
 
-            // TAMBAHKAN NOTIFIKASI SIGNALR
+            // --- SIGNALR BROADCAST ---
             try
             {
+                // 1. Kirim sinyal ke halaman Aktivitas (Payload berupa Object)
                 await _hubContext.Clients.All.SendAsync("AksesLogDeleted", new
                 {
-                    Id = id,
+                    Id = id, // Frontend akan menangkap ini
                     Timestamp = DateTime.UtcNow,
-                    Message = $"Akses log dengan ID {id} telah dihapus",
-                    KartuUid = aksesLog.Kartu?.Uid ?? "Unknown",
-                    Ruangan = aksesLog.Ruangan?.Nama ?? "Unknown"
+                    Message = "Item deleted"
                 });
 
+                // 2. Kirim notifikasi ke Admin (Optional)
                 await _hubContext.Clients.Group("admin").SendAsync("SystemNotification", new
                 {
                     Type = "AKSES_LOG_DELETED",
-                    Data = new { Id = id, DeletedAt = DateTime.UtcNow },
-                    Message = $"Akses log ID {id} dihapus dari sistem"
+                    Data = new { Id = id },
+                    Message = $"Akses log ID {id} dihapus"
                 });
+
+                // 3. PENTING: Update Counter di Dashboard (Total Aktivitas)
+                await _broadcastService.PushDashboardStatsAsync();
             }
             catch (Exception hubEx)
             {
-                _logger.LogWarning(hubEx, "Gagal mengirim notifikasi SignalR untuk penghapusan akses log");
+                _logger.LogWarning(hubEx, "Gagal mengirim notifikasi SignalR delete");
             }
 
             return ApiResponse<object>.SuccessResult(null, "Akses log berhasil dihapus");

@@ -86,13 +86,9 @@ public class RuanganService : IRuanganService
 
             var ruanganDto = _mapper.Map<RuanganDto>(ruangan);
 
-            // --- SIGNALR UPDATES ---
-            // 1. Notifikasi List Ruangan Berubah
             await SendRuanganNotification("RUANGAN_CREATED", ruanganDto);
 
-            // 2. Update Total Ruangan di Dashboard (Realtime Counter)
             await _broadcastService.PushDashboardStatsAsync();
-            // -----------------------
 
             return ApiResponse<RuanganDto>.SuccessResult(ruanganDto, "Ruangan berhasil ditambahkan");
         }
@@ -167,13 +163,9 @@ public class RuanganService : IRuanganService
 
             _logger.LogInformation("Ruangan deleted: {Id} - {Nama}", ruangan.Id, ruangan.Nama);
 
-            // --- SIGNALR UPDATES ---
-            // 1. Notifikasi List Ruangan Berubah
             await SendRuanganNotification("RUANGAN_DELETED", ruanganDto);
 
-            // 2. Update Total Ruangan di Dashboard (Realtime Counter)
             await _broadcastService.PushDashboardStatsAsync();
-            // -----------------------
 
             return ApiResponse<object>.SuccessResult(null!, "Ruangan berhasil dihapus");
         }

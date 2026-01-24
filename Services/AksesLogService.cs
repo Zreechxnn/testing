@@ -307,7 +307,6 @@ public class AksesLogService : IAksesLogService
     {
         try
         {
-            // Gunakan UTC date untuk konsistensi dengan data di database
             var hariIniUtc = DateTime.UtcNow.Date;
             var besokUtc = hariIniUtc.AddDays(1);
 
@@ -325,7 +324,6 @@ public class AksesLogService : IAksesLogService
                 .Take(5)
                 .ToList();
 
-            // Tampilkan tanggal dalam WIB
             var hariIniWib = TimeZoneInfo.ConvertTimeFromUtc(hariIniUtc, WibTimeZone);
 
             var stats = new TodayStatsDto

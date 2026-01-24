@@ -160,6 +160,8 @@ public class UserService : IUserService
 
             await SendUserNotification("USER_UPDATED", userDto);
 
+            await _hubContext.Clients.All.SendAsync("ReceiveCheckIn");
+
             return ApiResponse<UserDto>.SuccessResult(userDto, "User berhasil diupdate");
         }
         catch (Exception ex)

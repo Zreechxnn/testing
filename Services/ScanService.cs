@@ -36,26 +36,19 @@ public class ScanService : IScanService
     {
         try
         {
-            // 1. Validasi Input Dasar
             if (string.IsNullOrWhiteSpace(request.Uid))
             {
                 return ApiResponse<ScanResponse>.ErrorResult("UID kartu tidak boleh kosong");
             }
 
-            // Normalisasi: Hapus spasi di awal/akhir
             var normalizedUid = request.Uid.Trim();
 
             _logger.LogInformation("Processing Register: UID={Uid}", normalizedUid);
 
-            // 2. CEK DUPLIKAT (PENTING AGAR TIDAK ERROR 500)
-            // Kita cek apakah kartu ini sudah ada di database?
             var existingKartu = await _kartuRepository.GetByUidAsync(normalizedUid);
 
             if (existingKartu != null)
             {
-                // Jika sudah ada, jangan throw error.
-                // Kembalikan sukses dengan status "EXISTING". 
-                // Ini mencegah alat/frontend mengira sistem crash.
                 return ApiResponse<ScanResponse>.SuccessResult(new ScanResponse
                 {
                     Success = true,
@@ -66,21 +59,17 @@ public class ScanService : IScanService
                 });
             }
 
-            // 3. Buat Object Baru
-            // Kita biarkan UserId dan KelasId NULL sesuai constraint database
             var kartu = new Kartu
             {
                 Uid = normalizedUid,
                 Status = "AKTIF",
-                Keterangan = "Registered via Scan", // Keterangan default
-                CreatedAt = DateTime.UtcNow,        // Wajib isi CreatedAt
+                Keterangan = "Registered via Scan",
+                CreatedAt = DateTime.UtcNow,
 
-                // Pastikan ini NULL agar lolos constraint "CK_Kartu_SingleOwner"
                 UserId = null,
                 KelasId = null
             };
 
-            // 4. Simpan ke Database
             await _kartuRepository.AddAsync(kartu);
             var saved = await _kartuRepository.SaveAsync();
 
@@ -89,7 +78,6 @@ public class ScanService : IScanService
                 return ApiResponse<ScanResponse>.ErrorResult("Database menolak penyimpanan data (No rows affected).");
             }
 
-            // 5. Kirim Notifikasi Realtime ke Dashboard (SignalR)
             try
             {
                 var logData = new
@@ -103,11 +91,9 @@ public class ScanService : IScanService
             }
             catch (Exception hubEx)
             {
-                // Jangan biarkan error SignalR membatalkan response API
                 _logger.LogWarning("Gagal mengirim notifikasi SignalR: {Message}", hubEx.Message);
             }
 
-            // 6. Return Sukses
             var scanResponse = new ScanResponse
             {
                 Success = true,
@@ -121,12 +107,10 @@ public class ScanService : IScanService
         }
         catch (Exception ex)
         {
-            // Tangkap Error Database Sebenarnya (InnerException)
             var realError = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
 
             _logger.LogError(ex, "CRITICAL ERROR RegisterCard: {Message}", realError);
 
-            // Tampilkan error asli di response API untuk debugging
             return ApiResponse<ScanResponse>.ErrorResult($"Gagal Register: {realError}");
         }
     }

@@ -246,9 +246,6 @@ public class AuthService : IAuthService
 
             var userDto = _mapper.Map<UserDto>(user);
 
-            // --- SIGNALR UPDATE ---
-            // Memberitahu admin bahwa user ini baru saja mengupdate profilnya (misal ganti username)
-            // Frontend 'UsersPage' akan menangkap ini dan merefresh tabel
             await SendUserNotification("USER_UPDATED", userDto);
             // ----------------------
 
@@ -276,5 +273,38 @@ public class AuthService : IAuthService
             await _hubContext.Clients.All.SendAsync("UserNotification", payload);
         }
         catch { /* Ignore */ }
+    }
+
+    public async Task<ApiResponse<UserDto>> Register(UserRegisterRequest request)
+    {
+        try
+        {
+            var existingUser = await _userRepository.GetByUsernameAsync(request.Username);
+            if (existingUser != null)
+            {
+                return ApiResponse<UserDto>.ErrorResult("Username sudah digunakan");
+            }
+
+            var newUser = new User
+            {
+                Username = request.Username,
+                Role = "siswa", // DEFAULT ROLE SISWA
+                KelasId = request.KelasId,
+                PasswordHash = HashPassword(request.Password), // Hash password
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _userRepository.AddAsync(newUser);
+            await _userRepository.SaveAsync();
+
+            var userDto = _mapper.Map<UserDto>(newUser);
+
+            return ApiResponse<UserDto>.SuccessResult(userDto, "Registrasi berhasil, silakan login.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Gagal register user: {Username}", request.Username);
+            return ApiResponse<UserDto>.ErrorResult("Terjadi kesalahan saat registrasi");
+        }
     }
 }

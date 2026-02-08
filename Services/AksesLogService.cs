@@ -280,7 +280,6 @@ public class AksesLogService : IAksesLogService
                 TotalUsers = totalUsers
             };
 
-            // Broadcast update via SignalR
             try
             {
                 await _hubContext.Clients.Group("dashboard").SendAsync("DashboardStatsUpdated", new
@@ -378,32 +377,22 @@ public class AksesLogService : IAksesLogService
     {
         try
         {
-            // 1. Tentukan tanggal patokan (Hari ini jam 00:00)
             var todayDate = DateTime.UtcNow.Date;
-            var startDate = todayDate.AddDays(-29); // 30 hari ke belakang
+            var startDate = todayDate.AddDays(-29);
 
-            // 2. Tentukan batas akhir QUERY DATABASE
-            // FIX: Tambahkan 1 hari dikurang 1 tick agar mencakup sampai jam 23:59:59 hari ini
-            // Kalau cuma pakai todayDate, data jam 08:00 pagi hari ini tidak akan terambil.
             var queryEndDate = todayDate.AddDays(1).AddTicks(-1);
 
-            // 3. Ambil data mentah dari DB dengan range yang SUDAH DIPERBAIKI
             var rawData = await _aksesLogRepository.GetDailyStatsAsync(startDate, queryEndDate);
 
             var result = new List<DailyStatsDto>();
 
-            // 4. Loop untuk mengisi grafik (termasuk tanggal yang datanya 0)
             for (var date = startDate; date <= todayDate; date = date.AddDays(1))
             {
-                // Konversi tanggal ke WIB agar label di grafik sesuai user Indonesia
                 var dateWib = TimeZoneInfo.ConvertTimeFromUtc(date, WibTimeZone);
 
                 result.Add(new DailyStatsDto
                 {
-                    // Format Label: "21 Dec"
                     Tanggal = dateWib.ToString("dd MMM"),
-
-                    // Cek apakah ada data di tanggal tersebut
                     Total = rawData.ContainsKey(date) ? rawData[date] : 0
                 });
             }

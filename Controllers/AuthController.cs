@@ -110,4 +110,21 @@ public class AuthController : ControllerBase
 
         return Ok(response);
     }
+
+    [HttpPost("register")]
+    [AllowAnonymous]
+    public async Task<ActionResult<ApiResponse<UserDto>>> Register([FromBody] UserRegisterRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
+        {
+            return BadRequest(ApiResponse<UserDto>.ErrorResult("Username dan Password wajib diisi"));
+        }
+
+        var response = await _authService.Register(request);
+
+        if (!response.Success)
+            return BadRequest(response);
+
+        return Ok(response);
+    }
 }

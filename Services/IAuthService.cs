@@ -9,4 +9,5 @@ public interface IAuthService
     Task<ApiResponse<List<object>>> GetRoles();
     Task<ApiResponse<bool>> ChangePassword(int userId, ChangePasswordRequest request);
     Task<ApiResponse<UserDto>> UpdateProfile(int userId, UpdateProfileRequest request);
+    Task<ApiResponse<UserDto>> Register(UserRegisterRequest request);
 }

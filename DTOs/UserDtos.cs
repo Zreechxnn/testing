@@ -56,3 +56,10 @@ public class UserKelasInfo
     public string NamaPeriode { get; set; } = string.Empty;
     public bool IsPeriodeAktif { get; set; }
 }
+
+public class UserRegisterRequest
+{
+    public required string Username { get; set; }
+    public required string Password { get; set; }
+    public int? KelasId { get; set; }
+}
